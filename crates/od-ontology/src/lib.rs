@@ -43,7 +43,7 @@
 //!
 //! let ndjson = std::fs::read_to_string("data/account_move.spo.ndjson").unwrap();
 //! let triples = parse_ndjson(&ndjson).unwrap();
-//! let schema = corpus_to_schema(&triples, Some("account_move"));
+//! let schema = corpus_to_schema(&triples, Some(&["account_move"]));
 //! println!("{}", schema.to_sql());
 //! ```
 

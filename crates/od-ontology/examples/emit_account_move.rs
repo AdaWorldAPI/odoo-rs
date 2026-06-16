@@ -17,7 +17,7 @@ fn main() {
     );
     let ndjson = std::fs::read_to_string(path).expect("account_move fixture present");
     let triples = parse_ndjson(&ndjson).expect("fixture parses");
-    let schema = corpus_to_schema(&triples, Some("account_move"));
+    let schema = corpus_to_schema(&triples, Some(&["account_move"]));
     let ddl = schema.to_sql();
 
     println!("{ddl}");

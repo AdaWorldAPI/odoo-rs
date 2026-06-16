@@ -70,14 +70,58 @@ database on day one.
 
 The canonical rich model: 1 647 triples, 610 `@api.depends` edges, dozens of
 `_compute_` materialisers, `_check_*` guards raising `ValidationError`,
-`line_ids` cross-record deps. If `account.move` lights up faithfully, the
-pattern generalises to all 388 object types — it exercises every `DEFINE`
-variant at once.
+`line_ids` cross-record deps. Exercises every `DEFINE` variant at once.
 
 ```bash
-cargo test  -p od-ontology                              # 9 slice tests, real fixture
+cargo test  -p od-ontology                              # 9 slice-1 + 11 slice-2 tests
 cargo run   -p od-ontology --example emit_account_move  # print the DDL
 ```
+
+## Slice 2 — `account.move` + `account.move.line` + `res.partner` + `res.company`
+
+The smallest meaningful expansion. **2 739 triples across 4 models** surface
+three shapes single-model focus can't:
+
+1. **Back-ref resolution within the focus set.** `account_move.line_ids` lowers
+   to a `DEFINE EVENT` on `account_move_line` (the resolved child table) via
+   the `<parent>_<stem>` Odoo convention, not the slice-1 placeholder
+   `account_move__line_ids`. The event fires `LET $parent = $after.move_id;
+   UPDATE $parent SET …` — the One2many inverse becomes real.
+2. **`res_*` namespace resolution.** `account_move.partner_id` lowers to
+   `option<record<res_partner>>` via the `res_<stem>` convention; same for
+   `company_id → res_company`.
+3. **Honest unresolved audits.** Relations whose targets aren't in the focus
+   set (e.g. `journal_id`, `commercial_partner_id`, `invoice_line_ids`'s
+   semantic-but-misnamed target) emit `(child UNRESOLVED — not in focus set)`
+   notes and a `/* TODO: resolve child→parent back-ref */` on the `THEN`
+   clause — never silent fallthroughs.
+
+```bash
+cargo run -p od-ontology --example emit_slice_2
+# -- summary: 4 tables, 369 fields, 401 functions (deferred bodies),
+#    64 events (reactive + guards), 24 unresolved-child audit notes —
+#    from 2 739 triples
+```
+
+### Naming-convention ladder
+
+The relation-target resolver tries, in order:
+
+| # | Convention | Example (focus={account_move, account_move_line, res_partner, res_company}) |
+|---|---|---|
+| 1 | exact: stem itself is a focus model | `move_id` → ❌ (no model named `move`) |
+| 2 | `res_<stem>` (Odoo `res.*` master data) | `partner_id` → ✅ `res_partner` |
+| 3 | `<parent>_<stem>` (parent-suffixed children) | `account_move.line_ids` → ✅ `account_move_line` |
+| — | miss → bare stem with inline audit | `journal_id` → `record<journal>` + UNRESOLVED note |
+
+The exceptions Odoo hand-wires (`account.move.line.move_id` is the One2many
+inverse for both `line_ids` AND `invoice_line_ids`; `invoice_line_ids`'s first
+positional arg is `'account.move.line'` not `'account.move.invoice_line'`) are
+the typed `OdooEntity::{Many2one,One2many}` lift the
+`lance-graph-ontology::odoo_blueprint` consts provide — the deferred bit. The
+test `invoice_line_ids_resolution_is_an_acknowledged_deferred_gap` pins the
+current honest fallback (`record<invoice_line>`) so removing it later is
+visible in the diff.
 
 ## The cut tail (deferred)
 
@@ -96,9 +140,11 @@ odoo-rs/
 │   ├── src/surreal_ast.rs     #   typed DDL AST + ToSql
 │   ├── src/triple.rs          #   SPO corpus loader ({s,p,o,f,c} ndjson)
 │   ├── src/emit.rs            #   the corpus → ontology-shape projection
-│   └── tests/                 #   account.move slice (real fixture)
+│   ├── examples/              #   emit_account_move, emit_slice_2
+│   └── tests/                 #   slice-1 + slice-2 against real fixtures
 └── data/
-    └── account_move.spo.ndjson  # 1 647-triple slice of the 22 245 corpus
+    ├── account_move.spo.ndjson  # 1 647-triple slice-1 fixture
+    └── slice_2.spo.ndjson       # 2 739-triple slice-2 fixture (4 models)
 ```
 
 ## Provenance

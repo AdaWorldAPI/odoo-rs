@@ -19,7 +19,7 @@ fn fixture() -> String {
 
 fn account_move_ddl() -> String {
     let triples = parse_ndjson(&fixture()).expect("fixture parses");
-    let schema = corpus_to_schema(&triples, Some("account_move"));
+    let schema = corpus_to_schema(&triples, Some(&["account_move"]));
     schema.to_sql()
 }
 

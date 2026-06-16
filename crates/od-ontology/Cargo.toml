@@ -1,6 +1,6 @@
 [package]
 name = "od-ontology"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Odoo's business-logic ontology lowered to native SurrealDB DDL (DEFINE TABLE/FIELD/FUNCTION/EVENT). Not an ORM; not a migration tool."
