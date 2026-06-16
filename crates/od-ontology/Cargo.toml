@@ -1,0 +1,18 @@
+[package]
+name = "od-ontology"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Odoo's business-logic ontology lowered to native SurrealDB DDL (DEFINE TABLE/FIELD/FUNCTION/EVENT). Not an ORM; not a migration tool."
+repository = "https://github.com/AdaWorldAPI/odoo-rs"
+
+[dependencies]
+# serde-only, mirroring ruff_spo_triplet — the SPO corpus is JSON; the AST emit
+# side is pure (zero deps). No surrealdb-core (tokio + rust-1.95 + rocksdb is
+# disproportionate for "emit DDL"; we mirror its catalog shape instead).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = "warn"
