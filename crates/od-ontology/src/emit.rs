@@ -29,6 +29,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::relations::RelationMap;
 use crate::surreal_ast::{
     EventDefinition, FieldDefinition, FunctionDefinition, Kind, Schema, TableDefinition,
 };
@@ -56,11 +57,22 @@ mod obj {
 /// set. `focus = None` emits every model in the corpus (no within-set resolver
 /// — bare stems fall back).
 ///
+/// `relations = Some(map)` supplies typed `Many2one`/`One2many` target tables
+/// and inverse fields lifted from `OdooEntity.fields[…].target` — the ground
+/// truth that overrides the name-heuristic ladder. `relations = None` is
+/// the convention-only mode.
+///
 /// The output ordering is deterministic (tables by name, fields by emission
-/// order, functions/events by `(model, name)`); the same `(triples, focus)`
-/// always emits the same DDL.
+/// order, functions/events by `(model, name)`); the same
+/// `(triples, focus, relations)` always emits the same DDL.
 #[must_use]
-pub fn corpus_to_schema(triples: &[Triple], focus: Option<&[&str]>) -> Schema {
+pub fn corpus_to_schema(
+    triples: &[Triple],
+    focus: Option<&[&str]>,
+    relations: Option<&RelationMap>,
+) -> Schema {
+    let empty = RelationMap::new();
+    let relations = relations.unwrap_or(&empty);
     let in_focus: Box<dyn Fn(&str) -> bool> = match focus {
         Some(set) => {
             let set: BTreeSet<&str> = set.iter().copied().collect();
@@ -108,7 +120,7 @@ pub fn corpus_to_schema(triples: &[Triple], focus: Option<&[&str]>) -> Schema {
                     continue;
                 };
                 let mut fd = FieldDefinition::new(&model, field);
-                fd.kind = infer_kind(field, &model, &focus_set);
+                fd.kind = infer_kind(field, &model, &focus_set, relations);
                 // computed field → VALUE + READONLY (store=True compute).
                 if let Some(computer) = computed_by.get(t.s.as_str()) {
                     if let Some(method) = triple::member_of(computer) {
@@ -164,19 +176,24 @@ pub fn corpus_to_schema(triples: &[Triple], focus: Option<&[&str]>) -> Schema {
     // Cross-record reactive events: when a child relation's leaf changes,
     // recompute the dependent parent fields on the parent table.
     for ((parent_model, rel), deps) in cross {
-        let resolved = resolve_target(&rel, &parent_model, &focus_set);
+        // RelationMap (the typed-lift truth) wins; convention is the fallback.
+        let from_map = relations.target(&parent_model, &rel);
+        let resolved: Option<String> = from_map
+            .map(str::to_string)
+            .or_else(|| resolve_target(&rel, &parent_model, &focus_set));
+        let resolved_via_map = from_map.is_some();
         let child_table = match &resolved {
             Some(t) => t.clone(),
             None => format!("{parent_model}__{rel}"), // unresolved placeholder
         };
 
-        // The conventional Odoo back-reference column name. When the child is
-        // in focus we trust the convention; if it ever diverges (Odoo's
-        // `account.move.line.move_id` vs the parent `account.move` is exactly
-        // this case — `move_id`, not `account_move_id`), the value falls
-        // through to the recorded child→parent column on the OdooEntity const
-        // (deferred wiring).
-        let back_ref = back_ref_name(&parent_model);
+        // The back-reference column name. The map carries the One2many inverse
+        // verbatim (`account.move.line.move_id`); falling back to the
+        // `<parent_stem>_id` convention when no inverse was supplied.
+        let back_ref = relations
+            .inverse(&parent_model, &rel)
+            .map(str::to_string)
+            .unwrap_or_else(|| back_ref_name(&parent_model));
 
         let mut leaves: Vec<&String> = deps.iter().map(|(leaf, _)| leaf).collect();
         leaves.sort_unstable();
@@ -202,9 +219,14 @@ pub fn corpus_to_schema(triples: &[Triple], focus: Option<&[&str]>) -> Schema {
             format!("/* TODO: resolve child→parent back-ref for {parent_model}.{rel} */ UPDATE $parent SET {recompute}")
         };
 
+        let provenance = if resolved_via_map {
+            "typed-lift"
+        } else {
+            "convention"
+        };
         let note = match &resolved {
             Some(child) => format!(
-                "cross-record @api.depends: {parent_model}.{rel}.* (child={child}, back-ref={back_ref}) → recompute [{}]",
+                "cross-record @api.depends: {parent_model}.{rel}.* (child={child} via {provenance}, back-ref={back_ref}) → recompute [{}]",
                 parents
                     .iter()
                     .map(|p| p.as_str())
@@ -212,7 +234,7 @@ pub fn corpus_to_schema(triples: &[Triple], focus: Option<&[&str]>) -> Schema {
                     .join(", "),
             ),
             None => format!(
-                "cross-record @api.depends: {parent_model}.{rel}.* (child UNRESOLVED — not in focus set) → recompute [{}]",
+                "cross-record @api.depends: {parent_model}.{rel}.* (child UNRESOLVED — not in focus set, not in relation map) → recompute [{}]",
                 parents
                     .iter()
                     .map(|p| p.as_str())
@@ -274,17 +296,26 @@ fn is_guard(method: &str) -> bool {
 /// Name-heuristic field type. `*_ids` → `option<array<record<resolved>>>`,
 /// `*_id` → `option<record<resolved>>`, everything else → `option<any>`.
 ///
-/// Relation targets are resolved against `focus_set` via [`resolve_target`].
-/// All non-relation fields are nullable (`option<…>`) — Odoo fields are
-/// optional unless `required=True`, which is not in this triple slice.
-fn infer_kind(field: &str, parent_model: &str, focus_set: &BTreeSet<String>) -> Kind {
+/// Resolution order: `relations` map first (the typed `OdooField.target`
+/// truth), then the `focus_set` convention ladder. All non-relation fields
+/// are nullable (`option<…>`) — Odoo fields are optional unless
+/// `required=True`, which is not in this triple slice.
+fn infer_kind(
+    field: &str,
+    parent_model: &str,
+    focus_set: &BTreeSet<String>,
+    relations: &RelationMap,
+) -> Kind {
+    let map_target = relations.target(parent_model, field).map(str::to_string);
     if let Some(stem) = field.strip_suffix("_ids") {
-        let target =
-            resolve_target(stem, parent_model, focus_set).unwrap_or_else(|| stem.to_string());
+        let target = map_target
+            .or_else(|| resolve_target(stem, parent_model, focus_set))
+            .unwrap_or_else(|| stem.to_string());
         Kind::Array(Box::new(Kind::Record(vec![target]))).optional()
     } else if let Some(stem) = field.strip_suffix("_id") {
-        let target =
-            resolve_target(stem, parent_model, focus_set).unwrap_or_else(|| stem.to_string());
+        let target = map_target
+            .or_else(|| resolve_target(stem, parent_model, focus_set))
+            .unwrap_or_else(|| stem.to_string());
         Kind::Record(vec![target]).optional()
     } else {
         Kind::Any.optional()

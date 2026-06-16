@@ -103,7 +103,36 @@ cargo run -p od-ontology --example emit_slice_2
 #    from 2 739 triples
 ```
 
-### Naming-convention ladder
+### Typed-lift bridge — `RelationMap`
+
+The relation-target resolver tries the typed `OdooField.target` truth (a
+`RelationMap`) **first**; the heuristic ladder is the fallback. This closes the
+deferred gap from slice 2:
+
+```bash
+cargo test -p od-ontology --test slice_2_typed_lift
+# 7 tests demonstrating the lift's resolutions vs the heuristic's misses
+```
+
+The map ships as an ndjson artifact (`data/slice_2.relations.ndjson`) mirroring
+how the SPO corpus already works:
+
+```text
+{"model":"account_move","field":"invoice_line_ids","target":"account_move_line","inverse":"move_id"}
+{"model":"account_move","field":"bank_partner_id","target":"res_partner","inverse":null}
+```
+
+`RelationMap::from_ndjson(&str)` loads it. The future `od-ontology-bridge`
+binary extracts the full map from
+`lance-graph-ontology::odoo_blueprint::ENTITIES` (each
+`OdooField { kind: Many2one|One2many|Many2many, target: Some(t), … }` produces
+one row), keeping `od-ontology` itself zero-dep on the heavy ontology stack.
+
+Cross-record events carry a provenance audit in their note —
+`(child=account_move_line via typed-lift, …)` vs `(via convention, …)` — so a
+reader can see at a glance which relations are grounded by truth vs guess.
+
+### Naming-convention ladder (fallback when the map misses)
 
 The relation-target resolver tries, in order:
 
@@ -117,11 +146,10 @@ The relation-target resolver tries, in order:
 The exceptions Odoo hand-wires (`account.move.line.move_id` is the One2many
 inverse for both `line_ids` AND `invoice_line_ids`; `invoice_line_ids`'s first
 positional arg is `'account.move.line'` not `'account.move.invoice_line'`) are
-the typed `OdooEntity::{Many2one,One2many}` lift the
-`lance-graph-ontology::odoo_blueprint` consts provide — the deferred bit. The
-test `invoice_line_ids_resolution_is_an_acknowledged_deferred_gap` pins the
-current honest fallback (`record<invoice_line>`) so removing it later is
-visible in the diff.
+exactly what the typed-lift bridge above carries. `slice_2.rs` pins the
+honest *convention* fallback (`record<invoice_line>`); the parallel
+`slice_2_typed_lift.rs` proves the *lift* resolves it to `account_move_line`.
+Both stay in the test set — the diff between them is the value the bridge adds.
 
 ## The cut tail (deferred)
 

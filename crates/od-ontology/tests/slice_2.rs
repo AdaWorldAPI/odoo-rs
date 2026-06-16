@@ -33,7 +33,7 @@ fn fixture() -> String {
 
 fn slice_2_ddl() -> String {
     let triples = parse_ndjson(&fixture()).expect("fixture parses");
-    corpus_to_schema(&triples, Some(FOCUS)).to_sql()
+    corpus_to_schema(&triples, Some(FOCUS), None).to_sql()
 }
 
 #[test]
@@ -151,7 +151,7 @@ fn unresolved_cross_record_event_audits_inline() {
     // fallthroughs.
     let ddl = slice_2_ddl();
     assert!(
-        ddl.contains("(child UNRESOLVED — not in focus set)"),
+        ddl.contains("(child UNRESOLVED — not in focus set, not in relation map)"),
         "expected at least one UNRESOLVED audit note for out-of-focus child"
     );
     assert!(

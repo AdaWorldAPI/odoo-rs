@@ -43,15 +43,17 @@
 //!
 //! let ndjson = std::fs::read_to_string("data/account_move.spo.ndjson").unwrap();
 //! let triples = parse_ndjson(&ndjson).unwrap();
-//! let schema = corpus_to_schema(&triples, Some(&["account_move"]));
+//! let schema = corpus_to_schema(&triples, Some(&["account_move"]), None);
 //! println!("{}", schema.to_sql());
 //! ```
 
 mod emit;
+mod relations;
 mod surreal_ast;
 mod triple;
 
 pub use emit::corpus_to_schema;
+pub use relations::{Relation, RelationMap, RelationParseError};
 pub use surreal_ast::{
     EventDefinition, FieldDefinition, FunctionDefinition, IndexDefinition, Kind, Schema,
     TableDefinition, ToSql,

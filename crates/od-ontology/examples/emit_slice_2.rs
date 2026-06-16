@@ -25,6 +25,7 @@ fn main() {
             "res_partner",
             "res_company",
         ]),
+        None,
     );
     let ddl = schema.to_sql();
 

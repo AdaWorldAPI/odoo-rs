@@ -1,0 +1,14 @@
+{"model":"account_move","field":"line_ids","target":"account_move_line","inverse":"move_id"}
+{"model":"account_move","field":"invoice_line_ids","target":"account_move_line","inverse":"move_id"}
+{"model":"account_move","field":"partner_id","target":"res_partner","inverse":null}
+{"model":"account_move","field":"commercial_partner_id","target":"res_partner","inverse":null}
+{"model":"account_move","field":"bank_partner_id","target":"res_partner","inverse":null}
+{"model":"account_move","field":"company_id","target":"res_company","inverse":null}
+{"model":"account_move_line","field":"move_id","target":"account_move","inverse":null}
+{"model":"account_move_line","field":"partner_id","target":"res_partner","inverse":null}
+{"model":"account_move_line","field":"company_id","target":"res_company","inverse":null}
+{"model":"res_partner","field":"company_id","target":"res_company","inverse":null}
+{"model":"res_partner","field":"commercial_partner_id","target":"res_partner","inverse":null}
+{"model":"res_partner","field":"parent_id","target":"res_partner","inverse":null}
+{"model":"res_company","field":"partner_id","target":"res_partner","inverse":null}
+{"model":"res_company","field":"parent_id","target":"res_company","inverse":null}
