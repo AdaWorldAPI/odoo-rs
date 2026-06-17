@@ -127,6 +127,115 @@ impl RelationMap {
     pub fn is_empty(&self) -> bool {
         self.by_field.is_empty()
     }
+
+    /// Build a relation map directly from a SPO triple slice, consuming the
+    /// `target` and `inverse_name` predicates the
+    /// `lance-graph/tools/odoo-blueprint-extractor` enrichment landed for
+    /// `AdaWorldAPI/odoo-rs` (PR ratified the cross-language shape from
+    /// `AdaWorldAPI/ruff#18`).
+    ///
+    /// Wire shape:
+    ///
+    /// ```text
+    /// (odoo:account_move.line_ids, target, "account.move.line")
+    /// (odoo:account_move.line_ids, inverse_name, "move_id")
+    /// ```
+    ///
+    /// Targets are normalized **dots → underscores** so they match the rest
+    /// of this crate's API (which keys models by underscored ident, mirroring
+    /// the `odoo:<model>` IRI's local part). Unknown / framework subjects
+    /// (no `<model>.<field>` split) are skipped silently.
+    ///
+    /// When the corpus carries the same `(model, field)` as a sidecar
+    /// `relations.ndjson`, the corpus wins — call this AFTER any
+    /// [`Self::from_ndjson`] / [`Self::insert`] to override, or BEFORE to be
+    /// overridden. The map is APPEND on key collisions (last write wins).
+    #[must_use]
+    pub fn from_corpus(triples: &[crate::Triple]) -> Self {
+        let mut targets: BTreeMap<(String, String), String> = BTreeMap::new();
+        let mut inverses: BTreeMap<(String, String), String> = BTreeMap::new();
+
+        for t in triples {
+            if t.p != "target" && t.p != "inverse_name" {
+                continue;
+            }
+            let Some((model, field)) = split_model_field(&t.s) else {
+                continue;
+            };
+            let key = (model.to_string(), field.to_string());
+            if t.p == "target" {
+                targets.insert(key, t.o.replace('.', "_"));
+            } else {
+                inverses.insert(key, t.o.clone());
+            }
+        }
+
+        let mut by_field = BTreeMap::new();
+        for (key, target) in targets {
+            let inverse = inverses.remove(&key);
+            by_field.insert(key, (target, inverse));
+        }
+        Self { by_field }
+    }
+}
+
+/// Split `odoo:<model>.<field>` into `(model, field)`. Returns `None` for
+/// bare-model IRIs or framework symbols that don't follow the form.
+fn split_model_field(iri: &str) -> Option<(&str, &str)> {
+    let local = iri.split_once(':').map_or(iri, |(_, r)| r);
+    local.split_once('.')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Triple;
+
+    fn t(s: &str, p: &str, o: &str) -> Triple {
+        Triple {
+            s: s.into(),
+            p: p.into(),
+            o: o.into(),
+            f: 0.95,
+            c: 0.9,
+        }
+    }
+
+    #[test]
+    fn from_corpus_lifts_target_and_inverse() {
+        let triples = vec![
+            t("odoo:account_move.line_ids", "target", "account.move.line"),
+            t("odoo:account_move.line_ids", "inverse_name", "move_id"),
+            t("odoo:account_move.partner_id", "target", "res.partner"),
+            t("odoo:account_move", "has_function", "odoo:account_move._post"),
+        ];
+        let map = RelationMap::from_corpus(&triples);
+        assert_eq!(map.target("account_move", "line_ids"), Some("account_move_line"));
+        assert_eq!(map.inverse("account_move", "line_ids"), Some("move_id"));
+        assert_eq!(map.target("account_move", "partner_id"), Some("res_partner"));
+        assert_eq!(map.inverse("account_move", "partner_id"), None);
+    }
+
+    #[test]
+    fn slice_2_corpus_yields_account_move_line_ids() {
+        // FINDING: the wishlist's P1 (FK-target-override) landed upstream
+        // in lance-graph PR #523. The fresh slice 2 corpus now carries the
+        // `target` + `inverse_name` predicates this method consumes.
+        // `RelationMap::from_corpus` is the ~30 LOC promised in the wishlist.
+        let ndjson = include_str!("../../../data/slice_2.spo.ndjson");
+        let triples = crate::parse_ndjson(ndjson).expect("slice 2 parses");
+        let map = RelationMap::from_corpus(&triples);
+        assert_eq!(
+            map.target("account_move", "line_ids"),
+            Some("account_move_line"),
+            "FK-target-override should resolve line_ids → account_move_line"
+        );
+        assert_eq!(
+            map.inverse("account_move", "line_ids"),
+            Some("move_id"),
+            "inverse_name should be move_id"
+        );
+    }
 }
 
 /// Relation-override parse failure.

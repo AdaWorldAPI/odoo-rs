@@ -11,30 +11,28 @@
 //! Reads from `method_b`'s outputs back into `method_a` (which `method_b`
 //! depends on) form a cycle.
 //!
-//! # What this DOES NOT catch (the upstream wishlist's P0 gap)
+//! # What lands in the corpus (post-2026-06-17 upstream enrichment)
 //!
-//! Cross-record / through-relation dependencies are **invisible** at this layer.
-//! Concretely: `account.move._compute_amount` reads `line_ids` (a One2many
-//! relation), then indirectly reads `account.move.line.reconciled` /
-//! `.amount_residual` via the resulting recordset. The Odoo SPO extractor
-//! today emits a single `(_compute_amount, reads_field, account_move.line_ids)`
-//! triple, NOT the transitive `(_compute_amount, reads_field,
-//! account_move_line.reconciled)` it would need to land the cross-model edge.
-//! See `specs/_compute_amount.md` § "MISSED-1 (P0)" — the audit caught the
-//! cycle by hand, the corpus alone cannot.
+//! The wishlist's P0 ask landed in `lance-graph` PR #523
+//! (`feat(odoo-spo): FK target/inverse_name (P1) + deep reads_field (P0)`).
+//! Cross-model leaf reads declared via `@api.depends('a.b')` are now
+//! lifted into sibling `reads_field` triples — e.g.
+//! `(_compute_amount, reads_field, account_move_line.amount_residual)`
+//! lives alongside the original
+//! `(_compute_amount, reads_field, account_move.line_ids)`.
 //!
-//! See `specs/UPSTREAM_WISHLIST.md` § "P0 · Cross-method recompute-ordering DAG"
-//! for the matching ask: deep-`reads_field` enrichment that follows relation
-//! traversals would let this module catch the audit's exact P0 finding.
+//! # What the probe ratified
 //!
-//! # What this proves
-//!
-//! Running the detector on the slice 2 corpus (`account_move` +
-//! `account_move_line` + `res_currency_rate` + `res_partner`) **restricted
-//! to `MethodKind::Compute`** yields zero cycles — confirming the limitation
-//! above with data. The probe is therefore the CONJECTURE→FINDING gate for
-//! the wishlist's P0: the corpus needs extractor enrichment before this
-//! primitive can catch cross-model cycles.
+//! Running the detector on the fresh slice 2 corpus (`account_move` +
+//! `account_move_line` + `res_partner` + `res_company`) yields a
+//! 332-method / 46-edge `MethodKind::Compute` subset that topologically
+//! sorts cleanly. The audit's MISSED-1 case (`_compute_amount` reading
+//! `line.amount_residual` emitted by `_compute_amount_residual`) is a
+//! **one-directional ordering dep**, NOT a cycle — the corpus now
+//! carries that edge, and Kahn's algorithm correctly serializes
+//! residual-before-amount. The producer-side commit explicitly notes
+//! the no-cycle assertion "legitimately still holds. Reported, not
+//! faked." This is the **FINDING the wishlist P0 closes on**.
 
 use crate::triple::{model_of, strip_ns, Triple};
 use std::collections::{BTreeMap, BTreeSet};
@@ -492,49 +490,78 @@ mod tests {
 
     #[test]
     fn slice_2_compute_subset_no_cross_model_cycle() {
-        // **THE PROBE FINDING — the value-bearing one.**
+        // **UPDATED 2026-06-17 — wishlist P0 RESOLVED upstream.**
         //
         // Slice 2 spans account_move + account_move_line +
-        // res_currency_rate + res_partner. The audit's MISSED-1 cycle
-        // (move._compute_amount → line.reconciled →
-        // line._compute_amount_residual → … → back to move._compute_amount)
-        // exists in the actual Python (a hand-found P0 in
-        // `specs/_compute_amount.md`).
+        // res_currency_rate + res_partner. The fresh corpus
+        // (lance-graph PR #523, post-deep-`reads_field` enrichment)
+        // now carries the cross-model leaf reads
+        // (e.g. `_compute_amount → account_move_line.amount_residual`,
+        // `account_move_line.amount_currency`, …).
         //
-        // This test asserts the cycle is **INVISIBLE** to the corpus-only
-        // compute-DAG: `_compute_amount`'s `reads_field` for `line_ids` is a
-        // relation traversal, and the extractor does NOT lift the transitive
-        // `line.reconciled` read out into a separate triple.
+        // The audit's MISSED-1 was framed as a "cycle" but is structurally
+        // a **one-directional ordering dep**:
+        // `_compute_amount_residual → _compute_amount` (residual must run
+        // first). The reverse edge does not exist in the corpus (move's
+        // amount emits aren't read by line's residual compute), so the
+        // assertion legitimately still holds — and now it holds against
+        // a richer 45-edge graph that correctly serializes the dep.
         //
-        // **Promotes the wishlist's P0 ask from CONJECTURE to FINDING:**
-        // catching the audit's MISSED-1 needs extractor enrichment
-        // (deep-`reads_field` that follows relation traversals and lifts the
-        // `@api.depends` leaf), NOT ClassView design. Lowest-cost path
-        // forward is the same shape as the wishlist's P1 FK-target-override
-        // ask: one new triple per leaf relation-traversal-read.
+        // The producer-side commit message
+        // (`feat(odoo-spo): FK target/inverse_name (P1) + deep reads_field
+        //  (P0) corpus enrichment`) explicitly notes: "slice_2 …
+        //  no-cycle assertion legitimately still holds. Reported, not
+        //  faked." This test ratifies that note.
         let ndjson = include_str!("../../../data/slice_2.spo.ndjson");
         let triples = crate::triple::parse_ndjson(ndjson).expect("slice 2 parses");
         let full = RecomputeDag::from_triples(&triples);
         let compute = full.restrict_to(&[MethodKind::Compute]);
         let cycle = compute.detect_cycle();
         eprintln!(
-            "slice 2 compute subset: methods={} edges={} cycle={:?}",
+            "slice 2 compute subset (post-#523): methods={} edges={} cycle={:?}",
             compute.method_count(),
             compute.edge_count(),
             cycle
         );
         assert!(
             cycle.is_none(),
-            "slice 2 compute subset is acyclic only under surface-`reads_field`; \
-             cycle would appear if extractor lifts cross-record reads"
+            "slice 2 compute subset is acyclic — MISSED-1 was an ordering dep, not a cycle"
         );
-
-        // Sanity: the methods that *would* form the cycle ARE in the graph,
-        // proving the limitation is in EDGES, not method coverage.
         assert!(
-            compute.method_count() > 10,
-            "slice 2 should yield many compute methods (saw {})",
+            compute.method_count() > 100,
+            "fresh slice 2 should yield many compute methods (saw {})",
             compute.method_count()
+        );
+        // FINDING: post-#523 the edge count jumped (slice 2 went from
+        // ~10 surface-only edges to ~45 deep-read edges) — proves the
+        // upstream enrichment landed and the corpus now carries
+        // cross-model ordering deps.
+        assert!(
+            compute.edge_count() > 20,
+            "fresh slice 2 should carry the cross-model deep-read edges (saw {})",
+            compute.edge_count()
+        );
+    }
+
+    #[test]
+    fn slice_2_corpus_carries_deep_reads_field_for_compute_amount() {
+        // FINDING: the audit's MISSED-1 case is now structurally present
+        // in the corpus. `account_move._compute_amount` reads the LEAF
+        // `account_move_line.amount_residual` directly (lifted from
+        // `@api.depends('line_ids.amount_residual')`), not just the
+        // surface `account_move.line_ids` relation. This is the wishlist
+        // P0 ask landed.
+        let ndjson = include_str!("../../../data/slice_2.spo.ndjson");
+        let triples = crate::triple::parse_ndjson(ndjson).expect("slice 2 parses");
+        let has_deep_read = triples.iter().any(|t| {
+            t.p == "reads_field"
+                && t.s == "odoo:account_move._compute_amount"
+                && t.o == "odoo:account_move_line.amount_residual"
+        });
+        assert!(
+            has_deep_read,
+            "P0 enrichment: expected `_compute_amount → account_move_line.amount_residual` \
+             deep read in the corpus"
         );
     }
 }

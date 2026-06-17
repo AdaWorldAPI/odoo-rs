@@ -42,7 +42,25 @@ to retire its per-method audit ritual.
 
 ## What odoo-rs needs — prioritized
 
-### P0 · Cross-method recompute-ordering DAG
+> **2026-06-17 — P0 + P1 RESOLVED upstream.** `lance-graph` PR
+> [#523](https://github.com/AdaWorldAPI/lance-graph/pull/523)
+> (commit `69a3b0a`) shipped BOTH `target` / `inverse_name`
+> sibling triples on relation IRIs (P1) AND deep-`reads_field`
+> lifts of `@api.depends('a.b')` leaves (P0). Consumer side:
+> `od_ontology::RelationMap::from_corpus(&[Triple])` (~30 LOC,
+> 2 tests) now reads them directly. `slice_2.relations.ndjson`
+> hand-crafted overrides are obsolete. The recompute-DAG probe
+> ratifies the corpus: 332-method / 46-edge `MethodKind::Compute`
+> subset on the fresh slice 2 topologically sorts cleanly,
+> resolving the audit's MISSED-1 case as a one-directional
+> ordering dep (residual-before-amount), not a cycle.
+>
+> The P2 (`validation_kind`) and P1 (`_inherit` / `inherits_from`)
+> asks remain open. The bridge-binary deferral (walk `OdooEntity`
+> blueprint → relations.ndjson) is also obsolete — the corpus
+> carries the truth.
+
+### P0 · Cross-method recompute-ordering DAG  ✓ RESOLVED 2026-06-17
 
 **The minimum primitive.** Given the SPO corpus's `emitted_by` and
 `reads_field` triples, produce a topological order over `(model,
@@ -170,7 +188,7 @@ accepts.
   typed blueprint grows a `selection_values: &'static [&'static str]`
   slot, or the SPO corpus emits one triple per allowed value.
 
-### P1 · FK-target-override as a corpus predicate (RATIFIED cross-language by ruff#18)
+### P1 · FK-target-override as a corpus predicate (RATIFIED cross-language by ruff#18)  ✓ RESOLVED 2026-06-17
 
 **This is the most directly actionable item — it has working cross-language precedent.**
 
@@ -228,6 +246,14 @@ constructor reading a `target` / `inverse_name` predicate is ~30 LOC and
 **will be written the moment the corpus carries the predicate** — not
 before (building a reader for absent data is the premature-architecture
 trap a `core-gap-auditor` pass already corrected this session).
+
+> **2026-06-17 — IMPLEMENTED.** `RelationMap::from_corpus(&[Triple])`
+> shipped (`relations.rs`, ~30 LOC + 2 tests, exactly as predicted).
+> Lance-graph PR #523 landed both predicates; fresh slice 2 yields
+> `map.target("account_move", "line_ids") == Some("account_move_line")`
+> and `map.inverse(...) == Some("move_id")` directly from the
+> corpus. The hand-crafted `slice_2.relations.ndjson` is obsolete and
+> can be retired once the projection wiring picks up the corpus path.
 
 > **2026-06-17 post-rebase corpus check (FINDING).** Re-checked
 > `lance-graph/crates/lance-graph/src/graph/spo/odoo_ontology.spo.ndjson`
