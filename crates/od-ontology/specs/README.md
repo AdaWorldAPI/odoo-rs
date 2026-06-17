@@ -29,15 +29,54 @@ Every spec carries one of:
 
 ## Route conventions
 
-- **`ADAPTER`** — mechanical / data-shaped leaf method. Fits the thin
-  DEFINE FUNCTION adapter mold. May surface one or more CORE GAPs that
-  need EXTEND-CORE before the body is fully expressible (gaps are NOT
-  adapter-hack territory).
-- **`HAND-PORT`** — intrusive / stateful method (raw SQL,
-  hash-chain side effects, `env.cr.execute`, transactional fencing).
-  Doctrine § "Frankenstein-flattening guard" routes these AWAY from the
-  adapter mold to direct hand-port behind a feature gate; the
-  surrounding mechanical surface stays in the adapter.
+- **`adapter`** — mechanical / data-shaped leaf method (Odoo `_compute_*`).
+  Fits the thin DEFINE FUNCTION adapter mold. May surface CORE GAPs —
+  but those gaps MUST pass the 4-test gate (see below) before being
+  proposed as EXTEND-CORE rather than ADAPTER-HACK.
+- **`guard_adapter`** — variant of `adapter` for `@api.constrains` guard
+  methods (Odoo `_check_*`). DOES emit (a `DEFINE EVENT` with `WHEN` +
+  `THEN { THROW … }`), does NOT write fields (sentinel `do_out.writes_field:
+  null`), and uses `emit_shape: event`. The compute YAML template
+  generalizes cleanly; see `_check_invoice_currency_rate.md` for the
+  worked example.
+- **`hand_port`** — intrusive / stateful method (raw SQL, hash-chain side
+  effects, `env.cr.execute`, transactional fencing). Doctrine §
+  "Frankenstein-flattening guard" routes these AWAY from the adapter
+  mold to direct hand-port behind a feature gate; the surrounding
+  mechanical surface stays in the adapter.
+
+## CORE-GAP gate — the 4-test discipline (MANDATORY before any gap is filed)
+
+A "GAP" only counts as EXTEND-CORE if it passes ALL four tests below.
+Failing any single test demotes the proposal to ADAPTER-HACK and the
+spec must be re-shaped to use existing Core primitives. Established by
+the `_compute_amount` audit (see `_compute_amount.md` § "Audit verdict"
+— `core-gap-auditor` 2026-06-17 rejected BOTH originally-proposed GAPs).
+
+1. **Multi-reuse test.** Does the proposed primitive serve ≥ ~20 future
+   adapters? Quantify against the SPO corpus (grep the relevant
+   triple shapes).
+2. **Algebraic-generality test.** Does the primitive fit the same
+   *kind* of operator as the Core's existing standard-fn surface (pure
+   stateless `fn(args) -> Value` in surrealdb-core's `fnc/*`)? Or is it
+   a DB-table-backed lookup masquerading as algebra? **DB reads inside
+   standard-fn = category bend = ADAPTER-HACK.**
+3. **Frankenstein-guard.** Is the proposed shape genuinely
+   mechanical/data-shaped, or does it smuggle intrusive state that
+   production usage would need (business-day calendars, holiday tables,
+   fiscal-period boundaries, multi-provider tables, enum
+   discriminators)? Anything silently smuggled = ADAPTER-HACK.
+4. **Pivot-proposal test.** If a "GAP" really is just "an existing Core
+   primitive used inline" (`DEFINE TABLE` + `SELECT` subquery,
+   `math::fixed` on a stored scalar), the doctrine's "the Core empowers
+   the adapter to be thin" claim already holds — there is no gap. The
+   adapter author was wishing the Core looked like their domain.
+
+**Reject reflex:** when the SECOND `_compute_*` or `_check_*` method
+would naturally consume the proposed primitive as an inline subquery
+against a regular `DEFINE TABLE`, that's not multi-reuse evidence
+*for* the gap — that's evidence the existing primitive **already**
+covers both call sites and no gap exists.
 
 ## Per-method spec template (YAML)
 
@@ -78,7 +117,8 @@ method:
 
 | Method | Route | Status | CORE GAPs | File |
 |---|---|---|---|---|
-| `account.move._compute_amount` | ADAPTER | DRAFT-CONJECTURE | 2 (currency convert + rounding) | [`_compute_amount.md`](./_compute_amount.md) |
+| `account.move._compute_amount` | `adapter` | **SUPERSEDED-BY-AUDIT** (pivot in spec) | **0** (originally proposed 2; both REJECTED as ADAPTER-HACK per 4-test gate) | [`_compute_amount.md`](./_compute_amount.md) |
+| `account.move._check_invoice_currency_rate` | `guard_adapter` | DRAFT-CONJECTURE | 0 | [`_check_invoice_currency_rate.md`](./_check_invoice_currency_rate.md) |
 
 ## Why specs and not just generated code
 
