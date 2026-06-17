@@ -160,3 +160,20 @@ Core convenience (B).
   mis-framing, probe partially runnable), PP-15 (**single-tx invariant —
   the load-bearing condition**; B's tx-enrolled gate).
 - 2026-06-17 — `RESOLVED`. Verdict baked into `../_post.md`.
+- 2026-06-17 — **Post-rebase verification.** Re-checked PP-16's source
+  citations against fresh `surrealdb` at `68eaf63` (after rebase past PR
+  #41): `LockType::Pessimistic` confirmed at `core/src/kvs/tr.rs:22-23`;
+  plumbed through `ds.rs:206` (Pessimistic → bool true → builder lock);
+  `multiwriter_same_keys_conflict.rs` exists as the structural template
+  (45 lines, existing test uses `Optimistic` and demonstrates
+  conflict-then-abort — exactly the failure mode the pessimistic
+  mechanism avoids). The probe's concurrency half remains
+  runnable-today; the source-level structural claim is **promoted from
+  the council's word to independently re-verified post-rebase fact**.
+- 2026-06-17 — **`od-posting` skeleton carved** (workspace commit
+  `c08c1a7`). Trait surface (`PostingHost`, `MoveDraft`, `PostedMove`)
+  + the four load-bearing invariants are now published in source; the
+  actual `BEGIN → pessimistic RMW → CREATE → COMMIT` runner is
+  unimplemented and gated on the disk-gated fork build. NO surrealdb
+  client dep yet — keeps workspace `cargo check` cheap on the
+  constrained host.

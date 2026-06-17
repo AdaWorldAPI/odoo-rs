@@ -189,6 +189,19 @@ constructor reading a `target` / `inverse_name` predicate is ~30 LOC and
 before (building a reader for absent data is the premature-architecture
 trap a `core-gap-auditor` pass already corrected this session).
 
+> **2026-06-17 post-rebase corpus check (FINDING).** Re-checked
+> `lance-graph/crates/lance-graph/src/graph/spo/odoo_ontology.spo.ndjson`
+> (last touched at `d61be8c`, 22 245 triples) after rebasing past PR
+> #519. The corpus emits seven predicates — `depends_on`, `emitted_by`,
+> `has_function`, `raises`, `rdf:type`, `reads_field`,
+> `traverses_relation` — none of which carry a relation-target / inverse-
+> name shape. `traverses_relation` is the wrong direction (it's
+> `(method) → (model.field)`, naming which methods walk which fields;
+> not `(field) → (target_model)`, the shape ruff#18 ratified). **The
+> wishlist's P1 ask remains accurate, unimplemented, and high-value.**
+> No `RelationMap::from_corpus` will be written until the extractor
+> emits the predicate.
+
 ## What odoo-rs explicitly does NOT need (scope-fencing)
 
 - A **runtime ClassView dispatcher**. We codegen-flatten at DDL emit
