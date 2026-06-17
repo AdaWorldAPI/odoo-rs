@@ -1,6 +1,6 @@
 [package]
 name = "od-ontology"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Odoo's business-logic ontology lowered to native SurrealDB DDL (DEFINE TABLE/FIELD/FUNCTION/EVENT). Not an ORM; not a migration tool."
@@ -12,6 +12,17 @@ repository = "https://github.com/AdaWorldAPI/odoo-rs"
 # disproportionate for "emit DDL"; we mirror its catalog shape instead).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[features]
+# Opt-in CLI (mirrors openproject-nexgen-rs#31's `--features cli` discipline).
+# Lib consumers without the feature pay zero extra cost; the bin + its tests
+# only compile under this flag.
+cli = []
+
+[[bin]]
+name = "od-codegen"
+path = "src/bin/od_codegen.rs"
+required-features = ["cli"]
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
