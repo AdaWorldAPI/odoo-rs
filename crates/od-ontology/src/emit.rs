@@ -121,11 +121,52 @@ pub fn corpus_to_schema(
                 };
                 let mut fd = FieldDefinition::new(&model, field);
                 fd.kind = infer_kind(field, &model, &focus_set, relations);
-                // computed field → VALUE + READONLY (store=True compute).
-                if let Some(computer) = computed_by.get(t.s.as_str()) {
-                    if let Some(method) = triple::member_of(computer) {
-                        fd.value = Some(format!("fn::{model}::{method}($this)"));
-                        fd.readonly = true;
+
+                // Odoo One2many (*_ids field) → SurrealDB virtual projection
+                // (`VALUE <-child.back_ref READONLY`). Per
+                // `core-first-transcode-doctrine.md`: the graph-traversal arrow
+                // on `record<>` IS the Core's native One2many primitive. Stored
+                // arrays would force the ADAPTER to keep array consistency with
+                // the inverse — adapter-held state the Core can hold instead.
+                //
+                // Wins over `emitted_by` for `_ids` fields because Odoo
+                // One2many is **the projection itself** — any `compute=` ride-
+                // along is implementation detail, not the semantic. Pure
+                // computed scalars (`amount_total = fields.Monetary(compute=…)`)
+                // are NOT `_ids` fields and stay on the compute-VALUE path
+                // below.
+                //
+                // Only emit when target AND inverse can be resolved (typed lift
+                // OR convention). Unresolved relations fall back to the stored
+                // stub — adapter refuses to fabricate state the Core can't
+                // address.
+                let one2many = field.strip_suffix("_ids").and_then(|stem| {
+                    let target = relations
+                        .target(&model, field)
+                        .map(str::to_string)
+                        .or_else(|| resolve_target(stem, &model, &focus_set))?;
+                    let inverse = relations
+                        .inverse(&model, field)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| back_ref_name(&model));
+                    Some((target, inverse))
+                });
+                if let Some((target, inverse)) = &one2many {
+                    fd.value = Some(format!("<-{target}.{inverse}"));
+                    fd.readonly = true;
+                }
+
+                // Same-record computed field (`compute=…, store=True`) → VALUE
+                // + READONLY. For non-`_ids` fields this is the materializer.
+                // For `_ids` fields the One2many virtual projection above
+                // already won (Core-first: prefer the Core's native One2many
+                // primitive); the conditional below leaves that intact.
+                if one2many.is_none() {
+                    if let Some(computer) = computed_by.get(t.s.as_str()) {
+                        if let Some(method) = triple::member_of(computer) {
+                            fd.value = Some(format!("fn::{model}::{method}($this)"));
+                            fd.readonly = true;
+                        }
                     }
                 }
                 tables

@@ -166,6 +166,74 @@ fn output_is_deterministic_with_lift() {
     );
 }
 
+#[test]
+fn one2many_field_emits_virtual_projection_when_target_resolved() {
+    // Core-first move (per core-first-architect verdict on commit 8805c16):
+    // Odoo One2many → SurrealDB's native graph-traversal arrow on `record<>`,
+    // via `VALUE <-child.back_ref READONLY`. With the typed-lift map carrying
+    // `account_move.invoice_line_ids → (account_move_line, move_id)`, the
+    // emit must lower to a virtual projection, NOT a stored array.
+    //
+    // The over-ride wins over `emitted_by` for `_ids` fields because Odoo
+    // One2many IS the projection itself (any `compute=` is implementation
+    // detail). This test catches a regression that would silently re-promote
+    // the `emitted_by` compute method's `VALUE fn::…` over the virtual
+    // projection.
+    let with_lift = ddl_with_lift();
+    let block = grep(&with_lift, "invoice_line_ids ON account_move ");
+    assert!(
+        block.contains("VALUE <-account_move_line.move_id"),
+        "invoice_line_ids missing virtual-projection VALUE clause:\n{block}",
+    );
+    assert!(
+        block.contains("READONLY"),
+        "invoice_line_ids missing READONLY (virtual projection is read-side only):\n{block}",
+    );
+    // The compute-method VALUE (`fn::account_move::_onchange_quick_edit_total_amount`)
+    // MUST NOT appear on this field — the One2many virtual projection wins.
+    assert!(
+        !block.contains("fn::account_move::_onchange"),
+        "compute-method VALUE leaked through and shadowed the virtual projection:\n{block}",
+    );
+}
+
+#[test]
+fn one2many_field_falls_back_to_stored_when_target_unresolved() {
+    // The convention-only path (no typed lift) leaves unresolvable `_ids`
+    // fields as stored stubs — the adapter refuses to fabricate state the
+    // Core can't address. `bank_partner_id` is `_id` (Many2one, not One2many)
+    // so we use `account_move.invoice_line_ids` here without the lift: stem
+    // `invoice_line` matches no convention, virtual projection is suppressed,
+    // the field falls back to the stored stub with the heuristic-bare target.
+    let without = ddl_without_lift();
+    let block = grep(&without, "invoice_line_ids ON account_move ");
+    assert!(
+        block.contains("TYPE option<array<record<invoice_line>>>"),
+        "expected stored stub fallback without the lift:\n{block}",
+    );
+    // No virtual projection emitted on the unresolved path.
+    assert!(
+        !block.contains("VALUE <-"),
+        "virtual projection should NOT emit when target is unresolved \
+         (adapter would be fabricating):\n{block}",
+    );
+}
+
+#[test]
+fn many2one_fields_never_emit_virtual_projection() {
+    // Sanity guard: Many2one (`_id`, no trailing `s`) is the FK side; the
+    // virtual projection is for One2many (`_ids`) only. `partner_id` and
+    // `company_id` MUST stay as stored `option<record<…>>` columns.
+    let with_lift = ddl_with_lift();
+    for field in ["partner_id", "company_id"] {
+        let block = grep(&with_lift, &format!("{field} ON account_move "));
+        assert!(
+            !block.contains("VALUE <-"),
+            "{field} (Many2one) incorrectly emitted a virtual projection:\n{block}",
+        );
+    }
+}
+
 /// The lines of `ddl` mentioning `needle`, joined — for readable failure msgs.
 fn grep(ddl: &str, needle: &str) -> String {
     ddl.lines()
