@@ -201,11 +201,31 @@ pub fn corpus_to_schema(
         let mut parents: Vec<&String> = deps.iter().map(|(_, p)| p).collect();
         parents.sort_unstable();
         parents.dedup();
-        let leaf_clause = leaves
+
+        // Core-shape constraint (per `core-first-transcode-doctrine.md`): on
+        // a SurrealDB `DEFINE EVENT`, `$before` / `$after` are bare record
+        // snapshots — they do NOT dereference relation fields. A leaf path
+        // `partner_id.country.code` is a multi-hop walk on the child record;
+        // emitting `$before.partner_id.country.code` would be an
+        // **adapter-state-leak** (assuming joined views the Core doesn't
+        // provide). Honor the Core: collapse each leaf to its first segment
+        // (the field that actually exists on the bare child snapshot) for
+        // the WHEN trigger. This conservatively over-recomputes — the event
+        // fires on changes to the relation field itself, not its deep
+        // descendants — and the audit comment carries the full leaf paths
+        // so a reader can see which deps over-fire and why.
+        let mut leaf_first_segs: Vec<&str> = leaves
             .iter()
-            .map(|l| format!("$before.{l} != $after.{l}"))
+            .map(|l| l.split_once('.').map_or(l.as_str(), |(s, _)| s))
+            .collect();
+        leaf_first_segs.sort_unstable();
+        leaf_first_segs.dedup();
+        let leaf_clause = leaf_first_segs
+            .iter()
+            .map(|s| format!("$before.{s} != $after.{s}"))
             .collect::<Vec<_>>()
             .join(" OR ");
+        let has_multi_hop_leaf = leaves.iter().any(|l| l.contains('.'));
         let recompute = parents
             .iter()
             .map(|p| format!("{p} = fn::{parent_model}::_recompute_{p}($parent)"))
@@ -224,9 +244,27 @@ pub fn corpus_to_schema(
         } else {
             "convention"
         };
+        let over_recompute_audit = if has_multi_hop_leaf {
+            // Surface the multi-hop walk in the comment so the over-recompute
+            // is honest. The reader can see exactly which deps fire wider
+            // than strictly necessary — and what the typed lift would need
+            // to add (a per-segment trigger via a nested DEFINE EVENT on
+            // each intermediate child) to recover precision.
+            format!(
+                " | OVER-RECOMPUTE: leaves walk relations on child ({}) — WHEN fires on first-segment change only (Core constraint: $before/$after are bare snapshots, not joins)",
+                leaves
+                    .iter()
+                    .filter(|l| l.contains('.'))
+                    .map(|l| l.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )
+        } else {
+            String::new()
+        };
         let note = match &resolved {
             Some(child) => format!(
-                "cross-record @api.depends: {parent_model}.{rel}.* (child={child} via {provenance}, back-ref={back_ref}) → recompute [{}]",
+                "cross-record @api.depends: {parent_model}.{rel}.* (child={child} via {provenance}, back-ref={back_ref}) → recompute [{}]{over_recompute_audit}",
                 parents
                     .iter()
                     .map(|p| p.as_str())
@@ -234,7 +272,7 @@ pub fn corpus_to_schema(
                     .join(", "),
             ),
             None => format!(
-                "cross-record @api.depends: {parent_model}.{rel}.* (child UNRESOLVED — not in focus set, not in relation map) → recompute [{}]",
+                "cross-record @api.depends: {parent_model}.{rel}.* (child UNRESOLVED — not in focus set, not in relation map) → recompute [{}]{over_recompute_audit}",
                 parents
                     .iter()
                     .map(|p| p.as_str())

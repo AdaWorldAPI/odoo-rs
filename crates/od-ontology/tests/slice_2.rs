@@ -177,6 +177,72 @@ fn output_is_deterministic() {
     assert_eq!(slice_2_ddl(), slice_2_ddl(), "projection not stable");
 }
 
+#[test]
+fn event_when_clauses_never_walk_relations() {
+    // Core-shape constraint (`core-first-transcode-doctrine.md`): SurrealDB
+    // `DEFINE EVENT` WHEN clauses get bare record snapshots in $before /
+    // $after — multi-hop walks like `$before.partner_id.country.code` are
+    // not joins, they're an adapter-state-leak. The projection must collapse
+    // each leaf to its first segment for the trigger.
+    //
+    // The slice-2 corpus has multi-hop deps (e.g. res_partner walks
+    // `presence_ids.status`); a regression in the projection would re-introduce
+    // dotted paths into the WHEN clause. This test catches that drift.
+    let ddl = slice_2_ddl();
+    for line in ddl.lines() {
+        if !line.starts_with("DEFINE EVENT ") {
+            continue;
+        }
+        // Slice off everything before `WHEN ` and after the first ` THEN `.
+        let Some((_, after_when)) = line.split_once(" WHEN ") else {
+            continue;
+        };
+        let when_clause = after_when
+            .split_once(" THEN ")
+            .map_or(after_when, |(c, _)| c);
+        // For every `$before.X` / `$after.X` reference, X must be a SINGLE
+        // identifier (no dots) — otherwise the projection emitted a walk.
+        for snapshot in ["$before.", "$after."] {
+            let mut rest = when_clause;
+            while let Some(idx) = rest.find(snapshot) {
+                let tail = &rest[idx + snapshot.len()..];
+                let field: String = tail
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                // What's the next char after the captured field?
+                let after_field = &tail[field.len()..];
+                assert!(
+                    !after_field.starts_with('.'),
+                    "WHEN clause walks a relation off `{snapshot}{field}` — \
+                     adapter-state-leak (Core does not join on event snapshots):\n  {line}",
+                );
+                rest = after_field;
+            }
+        }
+    }
+}
+
+#[test]
+fn multi_hop_leaf_paths_audit_as_over_recompute() {
+    // When a leaf walks relations (e.g. `presence_ids.status` on a child
+    // table), the projection trades precision for validity: the WHEN trigger
+    // fires on first-segment change only, and the audit comment surfaces the
+    // full multi-hop paths so the over-recompute is honest. This test pins
+    // both halves: the comment IS emitted, and it names the actual walking
+    // leaves.
+    let ddl = slice_2_ddl();
+    assert!(
+        ddl.contains("OVER-RECOMPUTE:"),
+        "expected at least one OVER-RECOMPUTE audit on the slice-2 corpus \
+         (multi-hop leaves exist in the fixture)",
+    );
+    assert!(
+        ddl.contains("Core constraint: $before/$after are bare snapshots"),
+        "OVER-RECOMPUTE audit must name the Core constraint",
+    );
+}
+
 /// The lines of `ddl` mentioning `needle`, joined — for readable failure msgs.
 fn grep(ddl: &str, needle: &str) -> String {
     ddl.lines()
