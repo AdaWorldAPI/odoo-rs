@@ -63,6 +63,46 @@ method)` pairs such that no method runs before a method whose
   ritual by hand to catch cross-model cycles. Tractable at this scale
   (2 specs), gets unbearable at scale (~80 Money-computes, ~150 guards).
 
+> **2026-06-17 PROBE FINDING — recompute-DAG cycle detector shipped
+> (`od_ontology::RecomputeDag`).** A topological-sort + cycle-detection
+> module landed in `od-ontology` (`crates/od-ontology/src/recompute_dag.rs`,
+> 100% safe, 8 tests). Built from corpus `reads_field` + `emitted_by`
+> triples, with a `MethodKind` filter
+> (`Compute`/`Check`/`Onchange`/`Inverse`/`Search`/`Other` by
+> underscore-prefix) so the projection-relevant `Compute` subset can be
+> queried in isolation.
+>
+> Two findings against slice 1 / slice 2:
+>
+> 1. **`MethodKind::Compute` subsets ARE acyclic.** Slice 2 (move +
+>    line + currency + partner) topologically sorts cleanly. The audit's
+>    MISSED-1 P0 cycle (move._compute_amount via line.reconciled emitted
+>    by line._compute_amount_residual) is **STRUCTURALLY INVISIBLE** to
+>    the corpus-only DAG because `_compute_amount`'s only `reads_field`
+>    triple points at `account_move.line_ids` (the relation), not the
+>    transitive `account_move_line.reconciled` read.
+> 2. **The full graph DOES carry a real cycle** between two
+>    `_onchange_*` methods in slice 1
+>    (`_onchange_invoice_vendor_bill` ↔ `_onchange_quick_edit_total_amount`,
+>    both emit+read `invoice_line_ids`). This is a **legitimate** Odoo UI
+>    cooperative loop — NOT a recompute-DAG bug — and demonstrates why
+>    restricting to `MethodKind::Compute` is the correct invariant
+>    (cycle on the full graph is a false positive at the projection layer).
+>
+> **The wishlist's P0 ask, sharpened:** the topological-sort *machinery*
+> is shipped corpus-side. What's missing — and what blocks catching the
+> audit's MISSED-1 — is **deep-`reads_field` on the EXTRACTOR side**:
+> when `@api.depends('line_ids.reconciled')` is declared, the extractor
+> should emit BOTH `(_compute_amount, reads_field, account_move.line_ids)`
+> (which it already does) AND `(_compute_amount, reads_field,
+> account_move_line.reconciled)` (which is the new lift). Same wire shape
+> as the existing `reads_field` predicate; same cost as ruff#18's
+> sibling-IRI emission. Once landed, this exact `RecomputeDag` catches
+> the MISSED-1 case without any further work on this side. **The ask is
+> now narrower and concrete: one extractor change, no new
+> predicate, no ClassView interface required.**
+>
+
 ### P1 · `_inherit` (mixin) flattening
 
 Odoo's `_inherit = 'mail.thread'` is mixin composition. The parent's

@@ -136,6 +136,12 @@ method:
 | `account.move._check_invoice_currency_rate` | `guard_adapter` | DRAFT-CONJECTURE | 0 | [`_check_invoice_currency_rate.md`](./_check_invoice_currency_rate.md) |
 | `account.move._post` | `hand_port` | **ROUTE-RESOLVED** (8-agent council) / parity CONJECTURE | **1 EXTEND-CORE** (`gapless DEFINE SEQUENCE`, Option B — 4-test PASS, tx-enrolled gate) | [`_post.md`](./_post.md) · [`DECISIONS/D-POST-SEQ.md`](./DECISIONS/D-POST-SEQ.md) |
 
+## Corpus-side probes (cross-cutting tools, not per-method specs)
+
+| Probe | Status | Module | Finding |
+|---|---|---|---|
+| `RecomputeDag` cycle detector | **SHIPPED** | [`crates/od-ontology/src/recompute_dag.rs`](../src/recompute_dag.rs) | Slice 2 `MethodKind::Compute` subset acyclic — `_compute_amount.md`'s MISSED-1 cross-model cycle structurally invisible until extractor lifts deep-`reads_field`. See [`UPSTREAM_WISHLIST.md`](./UPSTREAM_WISHLIST.md) § "PROBE FINDING — recompute-DAG". Also found a legitimate `_onchange_*` UI loop on the full graph (filtered out by `MethodKind`). |
+
 ## Cross-session communication
 
 - [`UPSTREAM_WISHLIST.md`](./UPSTREAM_WISHLIST.md) — consumer-side
