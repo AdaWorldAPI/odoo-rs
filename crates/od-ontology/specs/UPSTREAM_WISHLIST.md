@@ -130,6 +130,65 @@ accepts.
   typed blueprint grows a `selection_values: &'static [&'static str]`
   slot, or the SPO corpus emits one triple per allowed value.
 
+### P1 · FK-target-override as a corpus predicate (RATIFIED cross-language by ruff#18)
+
+**This is the most directly actionable item — it has working cross-language precedent.**
+
+`AdaWorldAPI/ruff#18` (merged 2026-06-17) solved EXACTLY this on the
+Rails/OpenProject side. Rails `belongs_to :owner, class_name: 'User'`
+declares a relation (`:owner`) whose target class (`User`) does not
+follow the camelcase-singular convention on the relation name. ruff#18's
+fix: lift the override into a **sibling SPO triple keyed by the relation
+IRI**:
+
+```
+(openproject:WorkPackage.owner, class_name, "User")
+```
+
+> ruff#18's own framing: *"Without surfacing this override, downstream
+> Schema consumers invent a phantom `record<Owner>` for what should be
+> `record<User>`."*
+
+**This is byte-for-byte our `invoice_line_ids` deferred gap** (documented
+in `_compute_amount.md` and the slice-2 typed-lift tests). Odoo's
+`invoice_line_ids = fields.One2many('account.move.line', 'move_id')` has
+a field name (`invoice_line_ids`) whose `<parent>_<stem>` convention
+(`invoice_line`) misses the real target (`account.move.line`). The
+heuristic invents `record<invoice_line>` for what should be
+`record<account_move_line>` — the identical phantom-target failure ruff
+just fixed for Rails.
+
+- **Consumer use:** if the Odoo SPO extractor emits the analog —
+  `(odoo:account_move.invoice_line_ids, target, "account.move.line")`
+  and `(odoo:account_move.invoice_line_ids, inverse_name, "move_id")` —
+  then `od-ontology`'s `RelationMap` populates **directly from the
+  corpus**, with no sidecar artifact. The current
+  `slice_2.relations.ndjson` (14 hand-crafted rows) becomes obsolete,
+  and the deferred `od-ontology-bridge` crate (walk `OdooEntity`
+  blueprint → relations.ndjson) is **obviated** — the corpus carries
+  the truth.
+- **Where this request goes:** the **Odoo SPO extractor**
+  (`lance-graph/tools/odoo-blueprint-extractor`), NOT the ClassView
+  design session. Listed here because it's the same "what odoo-rs would
+  consume" surface and the design sessions overlap. The
+  `OdooField.target: Option<&'static str>` slot in the typed blueprint
+  (verified present this session) already holds this datum — the
+  extractor would emit it as a triple, mirroring how ruff#18 lifted
+  `AssocDecl.options` into a triple.
+- **Why P1 not P3:** unlike the inheritance items (gated on the POC
+  ClassView design), this has a *shipped reference implementation* in a
+  sibling repo and a *populated source slot* in the blueprint. It is the
+  lowest-risk, highest-certainty corpus enrichment on this list. **If the
+  extractor adds one predicate, `od-ontology`'s typed lift goes from
+  hand-crafted-14-rows to whole-corpus, for free.**
+
+**`od-ontology`'s side is ready:** `RelationMap` already resolves
+`(model, field) → (target, inverse)`; a `RelationMap::from_corpus(&[Triple])`
+constructor reading a `target` / `inverse_name` predicate is ~30 LOC and
+**will be written the moment the corpus carries the predicate** — not
+before (building a reader for absent data is the premature-architecture
+trap a `core-gap-auditor` pass already corrected this session).
+
 ## What odoo-rs explicitly does NOT need (scope-fencing)
 
 - A **runtime ClassView dispatcher**. We codegen-flatten at DDL emit
