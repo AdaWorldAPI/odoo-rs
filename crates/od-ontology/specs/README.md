@@ -120,6 +120,17 @@ method:
 | `account.move._compute_amount` | `adapter` | **SUPERSEDED-BY-AUDIT** (pivot in spec) | **0** (originally proposed 2; both REJECTED as ADAPTER-HACK per 4-test gate) | [`_compute_amount.md`](./_compute_amount.md) |
 | `account.move._check_invoice_currency_rate` | `guard_adapter` | DRAFT-CONJECTURE | 0 | [`_check_invoice_currency_rate.md`](./_check_invoice_currency_rate.md) |
 
+## Cross-session communication
+
+- [`UPSTREAM_WISHLIST.md`](./UPSTREAM_WISHLIST.md) — consumer-side
+  requirements from odoo-rs for whichever lance-graph session is
+  driving the `classid → ClassView` / composition / inheritance design.
+  Honest framing: lance-graph's implementation is POC, SurrealDB-side
+  has zero inherited specs, the doctrine doc itself is `CONJECTURE`.
+  We will NOT invent a parallel ClassView here; we'll consume what
+  lands. The wishlist names what we'd consume so the upstream session
+  has one real downstream use-case to design against.
+
 ## Why specs and not just generated code
 
 The projection (`emit::corpus_to_schema`) is **the codegen half** of the
