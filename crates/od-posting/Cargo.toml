@@ -1,0 +1,17 @@
+[package]
+name = "od-posting"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "GoBD-conformant posting host for Odoo `account.move._post` (HAND-PORT route, D-POST-SEQ Option C). Carries the single-transaction pessimistic-counter invariant that no DEFINE FUNCTION adapter can express. SKELETON — surrealdb client wiring deferred until the disk-gated fork build is available."
+repository = "https://github.com/AdaWorldAPI/odoo-rs"
+
+# The full implementation will add a surrealdb client dep + tokio + an
+# explicit BEGIN/COMMIT runner. Kept out of the dep tree at skeleton stage
+# so workspace `cargo check` stays cheap on a constrained host. See
+# `../od-ontology/specs/_post.md` § "What ships when".
+[dependencies]
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = "warn"

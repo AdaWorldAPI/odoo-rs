@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/od-ontology"]
+members = ["crates/od-ontology", "crates/od-posting"]
 
 [workspace.package]
 license = "Apache-2.0"
