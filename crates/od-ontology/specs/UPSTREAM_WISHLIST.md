@@ -287,3 +287,121 @@ we can adopt your choice when it lands.
   GitHub browse; we don't need a response. Update this file (PR
   against `AdaWorldAPI/odoo-rs`) only if our requirements actually
   drift from what you ship — silence is alignment.
+
+## 2026-06-17 update — three ruff PRs ratify predicate names
+
+Three PRs merged on `AdaWorldAPI/ruff` (commits `44959d5` /
+`01dfdf4` / `50cca02`) after the wishlist's original drafting. They
+firm up predicate names the Odoo extractor should adopt for our P1
+and add one new cross-language predicate worth requesting.
+
+### ruff#19 — `inherits_from` is the canonical cross-language predicate
+
+`ruff#19` ("feat(ar-shape): route Rails STI parent to inherits_from")
+reuses the existing C++ `inherits_from` predicate for Rails STI. **Wire
+shape is identical** across frontends — `(class, inherits_from, <base>)`
+— differentiated only by `CppExtracted` vs `OpenProjectExtracted`
+provenance. Ratifies that `inherits_from` is the shared
+inheritance predicate across the whole ruff stack.
+
+**Effect on this wishlist:** the P1 `_inherit` (mixin) and `_inherits`
+(delegation) asks now name a **concrete predicate the corpus already
+has wire-precedent for**. The Odoo extractor should emit
+`(odoo:<model>, inherits_from, odoo:<base_model>)` for every entry
+in `_inherit` — same shape, different `OdooExtracted` provenance.
+This is the lowest-risk corpus enrichment after #18's
+`target` / `inverse_name` (which itself is still pending — see the
+2026-06-17 post-rebase corpus check above).
+
+### ruff#21 — `validation_kind` is a NEW cross-language predicate (and a NEW wishlist item)
+
+`ruff#21` ("feat(ar-shape): emit validation_kind triple per recognised
+Rails validation key") adds `Predicate::ValidationKind` (vocab 55 → 56).
+Per-attribute typed-constraint shape:
+
+```
+(openproject:User.email, validation_kind, "presence")
+(openproject:User.email, validation_kind, "uniqueness")
+```
+
+The existing `validates_constraint` triple still fires for *every*
+declaration (existence-of-validation); the new `validation_kind`
+sibling lets downstream Schema consumers lower each kind to the right
+SurrealQL clause — `presence → ASSERT $value != NONE`,
+`uniqueness → DEFINE INDEX UNIQUE`, `length → ASSERT string::len()`,
+`format → ASSERT REGEX`, etc.
+
+**Effect on this wishlist (NEW ASK):** Odoo's `@api.constrains`
+methods (and `_check_*` guard methods generally) carry the same
+shape — every guard is checking a *kind* of invariant. The
+projection's `guard_adapter` route (see
+`_check_invoice_currency_rate.md`) lowers each `_check_*` to a
+`DEFINE EVENT WHEN/THEN THROW`, today undifferentiated. If the Odoo
+extractor emits
+
+```
+(odoo:<model>.<method>, validation_kind, "presence")
+   for "related-row-must-exist" guards
+(odoo:<model>.<method>, validation_kind, "uniqueness")
+   for unique-tuple guards (e.g. journal+ref pair)
+(odoo:<model>.<method>, validation_kind, "range")
+   for numeric range guards (e.g. amount > 0)
+(odoo:<model>.<method>, validation_kind, "format")
+   for string-format guards (e.g. VAT-ID regex)
+(odoo:<model>.<method>, validation_kind, "currency_rate_lookup")
+   for the cross-table existence-check shape this spec already names
+```
+
+then `_check_invoice_currency_rate.md`'s `kind=currency_rate_lookup`
+slot becomes a structural annotation on the projection (not a
+spec-side note) — the corpus carries the typed shape and the
+projection can specialize the `THROW` message + the `WHEN` filter per
+kind. Same shape as ruff#21's `validation_kind`; subject is the
+*method* IRI (which on the Odoo side is also where the message
+template lives), mirroring how ruff#21's subject is the *attribute*
+IRI (which on Rails is where the typed validator lives).
+
+**Where this request goes:** the Odoo SPO extractor
+(`lance-graph/tools/odoo-blueprint-extractor`), same site as the P1
+`target`/`inverse_name` ask.
+
+**Priority:** **P2.** Lower than `inherits_from` (P1, since
+`_inherit` flattening is on the critical path for ~50 derived
+models like `l10n_de.account_move`); higher than `Selection`
+enumeration (P3). Catches the structural shape that the
+`guard_adapter` template currently leaves as a doctrine-note.
+
+### ruff#20 — `has_visibility` predicate; informational for odoo-rs
+
+`ruff#20` adds `has_visibility` (vocab 54 → 55) — the
+public/protected/private member access specifier the C++ harvester
+was previously dropping. Plus the cv-aware method IRI fix
+(`(method, " const")` suffix for const overloads) resolves
+`GAP-CONST-OVERLOAD`.
+
+**Effect on this wishlist:** **informational only.** Python (Odoo's
+host language) is duck-typed; the `_underscore` and `__dunder`
+conventions communicate intent but aren't an OO API-surface signal
+the way C++ public/protected/private is. **Not requested for the Odoo
+extractor.** The C++-only `is_const` sort key + reassemble()'s
+67/67 byte-exact round-trip are noted for the substrate-comparison
+section below.
+
+### ruff_cpp_codegen — architectural prior art for od-codegen
+
+`ruff#20` also lands `ruff_cpp_codegen` (new crate, depends on
+`ruff_spo_triplet` only; no lance-graph edge): `project` → `MethodSig`
+manifest, `render` → Rust source naming `lance_graph_contract::codegen_
+manifest::MethodSig`. Plus `CPP-CODEGEN-RT` falsifier: 67 classes /
+857 methods → 124 KB MethodSig manifest, signature-plane round-trip
+holds.
+
+**Effect on this wishlist:** **architectural prior art for `od-codegen`.**
+Same C-FIRST pattern: ruff_spo_triplet → ruff_cpp_codegen mirrors the
+Odoo-side ruff → od-codegen. The decompile-vs-expand round-trip
+(`CPP-REASSEMBLE-RT`: 67/67 byte-exact in #20) is the kind of probe
+the wishlist's deferred `--validate` slot would carry for the SurrealQL
+side: emit-then-reparse should round-trip the projection's intent.
+**Not a request on the design session** — listed so a future
+od-codegen contributor knows the C++ side has a working pattern to
+copy from.

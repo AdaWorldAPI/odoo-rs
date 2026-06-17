@@ -159,6 +159,21 @@ method:
 inline subquery — same shape as any One2many lookup the adapter already
 does. **No substrate-bump required.**
 
+> **2026-06-17 — corpus enrichment opportunity (ruff#21 ratification).**
+> `AdaWorldAPI/ruff#21` ("emit validation_kind triple per recognised
+> Rails validation key", merged 2026-06-17) adds
+> `Predicate::ValidationKind` to the ruff vocab and demonstrates the
+> typed-constraint shape cross-language for Rails: per-attribute
+> `(attribute_iri, validation_kind, "presence"|"uniqueness"|"length"|…)`.
+> This guard is structurally a **`currency_rate_lookup` validation_kind**
+> on `account.move._check_invoice_currency_rate` — a related-row-must-
+> exist guard scoped by `(currency, company, date)`. If the Odoo
+> extractor adopts the predicate, the `WHEN` filter + `THROW` message
+> become specializable per kind rather than spec-side notes. See
+> `UPSTREAM_WISHLIST.md` § "ruff#21 — `validation_kind` is a NEW
+> cross-language predicate" for the full ask. **This spec stays
+> DRAFT-CONJECTURE; no projection change today.**
+
 ## Minor sugar gaps surfaced (non-blockers, NOT proposed as Core extensions)
 
 - **`THROW` with interpolated values.** Today's SurrealQL accepts a
