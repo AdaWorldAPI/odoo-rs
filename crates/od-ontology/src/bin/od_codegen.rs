@@ -212,9 +212,9 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             "--validate" => validate = true,
             "-f" | "--focus" => {
                 i += 1;
-                let value = args
-                    .get(i)
-                    .ok_or_else(|| "-f/--focus requires a comma-separated model list".to_string())?;
+                let value = args.get(i).ok_or_else(|| {
+                    "-f/--focus requires a comma-separated model list".to_string()
+                })?;
                 focus = value.split(',').map(|s| s.trim().to_string()).collect();
                 focus.retain(|s| !s.is_empty());
             }
@@ -337,18 +337,19 @@ mod tests {
 
     #[test]
     fn parse_args_focus_splits_on_comma_and_trims() {
-        let p = parse_args(&["-f".into(), "account_move, res_partner ,res_company".into()]).unwrap();
-        assert_eq!(
-            p.focus,
-            vec!["account_move", "res_partner", "res_company"],
-        );
+        let p =
+            parse_args(&["-f".into(), "account_move, res_partner ,res_company".into()]).unwrap();
+        assert_eq!(p.focus, vec!["account_move", "res_partner", "res_company"],);
     }
 
     #[test]
     fn parse_args_relations_long_and_short() {
         let p1 = parse_args(&["-r".into(), "/tmp/r.ndjson".into()]).unwrap();
         let p2 = parse_args(&["--relations".into(), "/tmp/r.ndjson".into()]).unwrap();
-        assert_eq!(p1.relations.as_deref(), Some(std::path::Path::new("/tmp/r.ndjson")));
+        assert_eq!(
+            p1.relations.as_deref(),
+            Some(std::path::Path::new("/tmp/r.ndjson"))
+        );
         assert_eq!(p1.relations, p2.relations);
     }
 
