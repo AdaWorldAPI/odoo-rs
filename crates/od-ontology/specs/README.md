@@ -43,7 +43,22 @@ Every spec carries one of:
   effects, `env.cr.execute`, transactional fencing). Doctrine §
   "Frankenstein-flattening guard" routes these AWAY from the adapter
   mold to direct hand-port behind a feature gate; the surrounding
-  mechanical surface stays in the adapter.
+  mechanical surface (validations) peels off to `guard_adapter`s. The
+  hand-port body lives in a **runtime consumer crate** (e.g.
+  `od-posting`), NOT in the zero-dep `od-ontology` projection, and calls
+  the DB via explicit `BEGIN/COMMIT`, not a `DEFINE FUNCTION`. See
+  `_post.md` (account.move._post) for the worked example — the first
+  hand_port spec, resolved through an 8-agent council
+  (`DECISIONS/D-POST-SEQ.md`).
+
+  **`hand_port` YAML differs from `adapter`:** `emit_shape: hand_port`,
+  `body_sketch: null` (no SurrealQL body), `core_gaps` → `core_fit`
+  (per-primitive TARGETS-CORE / HAND-PORT / EXTEND-CORE verdict), plus
+  three hand-port-specific slots — `intrusive_operations` (what crosses +
+  the mechanism/anti-mechanism per op), `preserves_invariant` (the
+  semantics the hand-port owns — atomicity, ordering, append-only,
+  byte-exactness), `hand_port_target` (where the Rust service lives). The
+  `do_in` / `composed_by` / `parity_oracle` slots carry over unchanged.
 
 ## CORE-GAP gate — the 4-test discipline (MANDATORY before any gap is filed)
 
@@ -119,6 +134,7 @@ method:
 |---|---|---|---|---|
 | `account.move._compute_amount` | `adapter` | **SUPERSEDED-BY-AUDIT** (pivot in spec) | **0** (originally proposed 2; both REJECTED as ADAPTER-HACK per 4-test gate) | [`_compute_amount.md`](./_compute_amount.md) |
 | `account.move._check_invoice_currency_rate` | `guard_adapter` | DRAFT-CONJECTURE | 0 | [`_check_invoice_currency_rate.md`](./_check_invoice_currency_rate.md) |
+| `account.move._post` | `hand_port` | **ROUTE-RESOLVED** (8-agent council) / parity CONJECTURE | **1 EXTEND-CORE** (`gapless DEFINE SEQUENCE`, Option B — 4-test PASS, tx-enrolled gate) | [`_post.md`](./_post.md) · [`DECISIONS/D-POST-SEQ.md`](./DECISIONS/D-POST-SEQ.md) |
 
 ## Cross-session communication
 

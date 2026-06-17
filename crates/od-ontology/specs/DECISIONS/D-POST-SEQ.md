@@ -1,8 +1,8 @@
 # D-POST-SEQ — GoBD gapless Belegnummer routing for `account.move._post`
 
-> **Status:** `COUNCIL-CONVENED` (2026-06-17). 5-consolidate + 3-brutal-critique
-> council running. Verdict will be baked into `_post.md` and this file
-> updated to `RESOLVED` once synthesized.
+> **Status:** `RESOLVED` (2026-06-17) — **Option C (HYBRID)**, mechanism
+> corrected three times through the 8-agent council. Verdict baked into
+> [`../_post.md`](../_post.md). Resolution log at the bottom of this file.
 > **Trigger:** the `adapter-shaper` HAND-PORT probe on `account.move._post`
 > surfaced a source-verified CRITICAL CORE-FIT finding. Operator standing
 > rule: "if critical make plan and ask 5 agents consolidate + 3 brutal
@@ -44,11 +44,11 @@ failure under concurrency / node restart.
 **How should odoo-rs route GoBD gapless Belegnummer numbering for
 `account.move._post` against the SurrealDB target?**
 
-| Option | Shape | Trade |
+| Option | Shape (as originally framed) | Trade |
 |---|---|---|
-| **A — HAND-PORT** | A Rust posting service owns the gapless loop (UNIQUE index on `(journal_id, sequence_prefix, sequence_number)` + optimistic-conflict-retry) inside an explicit SurrealDB `BEGIN/COMMIT`; never calls `DEFINE SEQUENCE`. The `_post` adapter-shaper's recommendation. | Faithful immediately; but every Odoo localization re-implements a retry loop in the consumer forever. |
-| **B — EXTEND-CORE** | Propose a `gapless` / `no-cache` option on surrealdb's `DEFINE SEQUENCE` (substrate-bump PR to AdaWorldAPI/surrealdb) so the Belegnummer stays in-DB and tx-enrolled. | One Core grow serves every gapless consumer; but a substrate PR that might be rejected for the same reasons the currency bolt-on was — must clear the 4-test gate genuinely. |
-| **C — HYBRID** | Option A now (immediate, faithful) + Option B filed as a parallel substrate improvement so future consumers get an in-DB path. | Pragmatic; risks two code paths to maintain. |
+| **A — HAND-PORT** | ~~A Rust posting service owns the gapless loop (UNIQUE index + optimistic-conflict-retry)~~ **← CORRECTED by the council: UNIQUE+retry delivers UNIQUE, not GAPLESS (scenario-world case-2 proof). Resolved mechanism = a single-transaction in-DB PESSIMISTIC counter; see Resolution.** | Faithful immediately. |
+| **B — EXTEND-CORE** | Propose a `gapless` / `no-cache` option on surrealdb's `DEFINE SEQUENCE` (substrate-bump PR to AdaWorldAPI/surrealdb) so the Belegnummer stays in-DB and tx-enrolled. | One Core grow serves every gapless consumer; cleared the 4-test gate genuinely (see Resolution). |
+| **C — HYBRID** | Option A now (immediate, faithful) + Option B filed as a parallel substrate improvement so future consumers get an in-DB path. | Two code paths until B lands, then A's loop collapses to a shim. **← CHOSEN.** |
 
 ## Council roster
 
@@ -92,7 +92,71 @@ failure under concurrency / node restart.
 - The odoo-rs thesis — hash + append-only + atomic-state all host
   faithfully; this is one narrowly-scoped sub-mechanism.
 
+## Resolution
+
+**VERDICT: Option C (HYBRID).** Unanimous across 8 agents. The
+*mechanism* inside Option A was corrected three times — the council
+earned its keep by catching errors the obvious framing smuggled.
+
+### The mechanism, corrected through the council
+
+1. **scenario-world (Wave 1):** "UNIQUE index + optimistic retry"
+   delivers **UNIQUE, not GAPLESS**. Case-2 proof: P1 claims N+1
+   (uncommitted); P2 retries to N+2, COMMITS; P1 ABORTS → `{…, N, N+2}` =
+   permanent gap. SurrealDB MVCC conflict-detects *same-key* writes only;
+   different-number writers never conflict → no serialization. **Gapless
+   ⇒ serialized allocation; uniqueness is necessary, not sufficient.**
+2. **PP-13 (Wave 2):** "serialize per chain" names the *property* but not
+   the *mechanism* — risked collapsing A into an out-of-DB sequence owner
+   (the 4th option). HOLD until the serializer is named.
+3. **PP-16 (Wave 2):** the serializer EXISTS in-DB — `LockType::Pessimistic`
+   (`core/src/kvs/tr.rs:20-25`, threaded at `ds.rs:205-210`). A pessimistic
+   write tx doing RMW on a per-`(journal,prefix)` counter key serializes
+   correctly. **Collapse averted; A is implementable in-DB.** Also: B does
+   NOT touch the hot `nextval` path (separate counter key); the probe's
+   concurrency half is runnable today via `kvs/tests/multiwriter_same_keys_conflict.rs`.
+4. **PP-15 (Wave 2):** the load-bearing invariant — counter-RMW + CREATE +
+   hash-event + state-flip must share **ONE** `BEGIN/COMMIT`. Source-verified
+   the composition (`create.rs:27` store-row+hash before `:31` events;
+   `doc/event.rs:34-35` event-in-tx). Any own-tx number path (`nextval`)
+   drops the lock at the seam → gap + dangling number. **B's hard
+   acceptance gate: tx-enrolled / no own-tx, else it re-imports the bug.**
+
+### Consolidated verdict (baked into `../_post.md`)
+
+- **Route: C.** A = single-tx in-DB pessimistic counter in a new
+  `od-posting` crate; B = tx-enrolled `gapless DEFINE SEQUENCE` substrate
+  PR (legitimate EXTEND-CORE per core-gap-auditor's 4-test PASS — distinct
+  from the rejected `fn::core::currency::*` because it's a policy flag on
+  an existing subsystem).
+- **Hash-chain + append-only + composite-atomicity: TARGETS-CORE**
+  (host faithfully).
+- **Parity: CONJECTURE**, gated on `PROBE-POST-GAPLESS-PARITY` (K-concurrent
+  + node-restart). Concurrency half runnable now; full parity needs Odoo
+  Python + the disk-gated fork build.
+- **Sequencing (integration-lead):** carve `od-posting` member (does not
+  exist yet) → ship A → file B after the 4-test gate. A/B genuinely
+  parallel.
+
+### Severity disposition
+
+The CRITICAL finding ("never use `DEFINE SEQUENCE`/`nextval` for the
+Belegnummer") is now documented loudly in `_post.md`'s `anti_mechanism`
+slot. It does NOT sink the odoo-rs thesis — hash + append-only +
+atomicity host faithfully; only gapless numbering needed the council, and
+it resolved to a real in-DB primitive (pessimistic counter) + an optional
+Core convenience (B).
+
 ## Resolution log
 
-- 2026-06-17 — `COUNCIL-CONVENED`. Wave 1 spawned.
-- _(verdict pending)_
+- 2026-06-17 — `COUNCIL-CONVENED`. Wave 1 spawned (5 consolidate).
+- 2026-06-17 — Wave 1 returned: core-first-architect (C, all TARGETS-CORE),
+  core-gap-auditor (B = EXTEND-CORE, 4-test PASS), truth-architect
+  (CONJECTURE label + `PROBE-POST-GAPLESS-PARITY` gate), integration-lead
+  (A/B genuinely parallel, carve `od-posting`), scenario-world
+  (**UNIQUE≠GAPLESS — mechanism correction #1**).
+- 2026-06-17 — Wave 2 returned: PP-13 (HOLD — name the serializer),
+  PP-16 (**`LockType::Pessimistic` exists — collapse averted**, nextval
+  mis-framing, probe partially runnable), PP-15 (**single-tx invariant —
+  the load-bearing condition**; B's tx-enrolled gate).
+- 2026-06-17 — `RESOLVED`. Verdict baked into `../_post.md`.
