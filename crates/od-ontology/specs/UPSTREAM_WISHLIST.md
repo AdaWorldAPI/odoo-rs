@@ -60,6 +60,22 @@ to retire its per-method audit ritual.
 > blueprint → relations.ndjson) is also obsolete — the corpus
 > carries the truth.
 
+> **2026-06-17 (later) — P1b + P2 EXTRACTOR RESOLVED, corpus regen
+> pending.** lance-graph PR
+> [#526](https://github.com/AdaWorldAPI/lance-graph/pull/526) (commit
+> `7947487`, merged `01b9509`) extends `spo_enrich.py` with
+> **`inherits_from`** (per ruff#19 — `_inherit` mixin + `_inherits`
+> delegation; self-inherits + `_inherit`-only classes correctly
+> dropped) and **`validation_kind`** (per ruff#21 — five recognised
+> kinds detected from `@api.constrains` bodies; three codex P2 fixes
+> baked in). 41 python + 11 rust tests green. **All P0 + P1 + P1b +
+> P2 EXTRACTOR work is now landed**; only `virtually_overrides`
+> (a genuine ClassView design question — not a single-predicate
+> emission) and `Selection` enumeration (P3) remain. **Corpus regen
+> for #526 still requires a session with `/home/user/odoo/addons` on
+> disk** (this host does not carry it); the Rust loader's predicate-
+> histogram match arm is forward-compat ready.
+
 ### P0 · Cross-method recompute-ordering DAG  ✓ RESOLVED 2026-06-17
 
 **The minimum primitive.** Given the SPO corpus's `emitted_by` and
@@ -121,11 +137,22 @@ method)` pairs such that no method runs before a method whose
 > predicate, no ClassView interface required.**
 >
 
-### P1 · `_inherit` (mixin) flattening
+### P1 · `_inherit` (mixin) flattening  ✓ RESOLVED 2026-06-17 (extractor; corpus regen pending)
 
 Odoo's `_inherit = 'mail.thread'` is mixin composition. The parent's
 fields / methods / decorators flatten into the child as if declared
 there.
+
+> **2026-06-17 — EXTRACTOR RESOLVED, regen pending.** lance-graph PR
+> [#526](https://github.com/AdaWorldAPI/lance-graph/pull/526)
+> (commit `7947487`, merged `01b9509`) extends `spo_enrich.py` with
+> `inherits_from` extraction — `_inherit` (string or list) emits
+> `(odoo:<this>, inherits_from, odoo:<base>)` per ruff#19's
+> cross-language wire shape. Self-inherits + `_inherit`-only
+> classes correctly dropped at scan time. **Wire ready; corpus regen
+> requires a session with `/home/user/odoo/addons` on disk.** Once
+> regenerated, the consumer's `od_ontology` can compose a
+> `ClassView`-style MRO from the corpus directly.
 
 - **Consumer use:** for each Odoo model with `_inherit = [...]`, emit
   the union of every parent class's `DEFINE FIELD` / `DEFINE FUNCTION` /
@@ -139,11 +166,21 @@ there.
   `inherits_from` triples for Python today (Ruby PR #6 has it; not
   verified for Python yet).
 
-### P1 · `_inherits` (delegation) flattening
+### P1 · `_inherits` (delegation) flattening  ✓ RESOLVED 2026-06-17 (extractor; corpus regen pending)
 
 Odoo's `_inherits = {'res.partner': 'partner_id'}` is **delegation**
 (distinct from mixin): `self.name` proxies through `self.partner_id.name`.
 SurrealDB has no native delegation.
+
+> **2026-06-17 — EXTRACTOR RESOLVED, regen pending.** Same lance-graph
+> PR #526 lifts `_inherits` dict keys via the same `inherits_from`
+> predicate (flat, not distinguished from `_inherit` mixin at the wire
+> level — per ruff#19's "one predicate, both sources" convention).
+> The delegation FK itself is already captured via the standard
+> `target`/`inverse_name` channel on the relation field
+> (`partner_id → res.partner` in the example), so downstream
+> `RelationMap::from_corpus` already knows the FK; `inherits_from`
+> now also marks the delegation parent for MRO purposes.
 
 - **Consumer use:** for each `_inherits` declaration, emit:
   ```surql
@@ -379,7 +416,7 @@ This is the lowest-risk corpus enrichment after #18's
 `target` / `inverse_name` (which itself is still pending — see the
 2026-06-17 post-rebase corpus check above).
 
-### ruff#21 — `validation_kind` is a NEW cross-language predicate (and a NEW wishlist item)
+### ruff#21 — `validation_kind` is a NEW cross-language predicate (and a NEW wishlist item)  ✓ RESOLVED 2026-06-17 (extractor; corpus regen pending)
 
 `ruff#21` ("feat(ar-shape): emit validation_kind triple per recognised
 Rails validation key") adds `Predicate::ValidationKind` (vocab 55 → 56).
@@ -430,6 +467,21 @@ IRI (which on Rails is where the typed validator lives).
 **Where this request goes:** the Odoo SPO extractor
 (`lance-graph/tools/odoo-blueprint-extractor`), same site as the P1
 `target`/`inverse_name` ask.
+
+> **2026-06-17 — EXTRACTOR RESOLVED, regen pending.** lance-graph PR
+> [#526](https://github.com/AdaWorldAPI/lance-graph/pull/526)
+> (commit `7947487`, merged `01b9509`) extends `spo_enrich.py` with
+> `validation_kind` classification. Five recognised kinds:
+> `presence` / `uniqueness` / `range` / `format` / `lookup`, detected
+> conservatively from `@api.constrains` method bodies. Three codex
+> P2 specificity fixes baked in (range skips `search_count(...)` LHS;
+> presence skips negated calls; constraint binding follows #525's
+> `model_names` for `_inherit`-only classes). **Wire ready; corpus
+> regen requires a session with `/home/user/odoo/addons` on disk.**
+> Once regenerated, `_check_invoice_currency_rate.md`'s
+> `currency_rate_lookup` kind becomes a structural annotation on the
+> projection (the spec's `CORE-FIT verdict` block already names this
+> as the receiving slot).
 
 **Priority:** **P2.** Lower than `inherits_from` (P1, since
 `_inherit` flattening is on the critical path for ~50 derived
