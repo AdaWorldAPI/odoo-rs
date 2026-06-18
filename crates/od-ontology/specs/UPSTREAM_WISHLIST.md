@@ -40,6 +40,33 @@ classid → ClassView`, with the SPO `has_function` / `inherits_from` /
 This file names what odoo-rs would consume from a stabilized ClassView
 to retire its per-method audit ritual.
 
+## 2026-06-18 — CORE-FIRST CORRECTION (read before the resolved-asks list below)
+
+The "RESOLVED via `spo_enrich.py` predicate" annotations below are factually
+true about what shipped, but **do not read them as "the way to satisfy this
+wishlist is to add another SPO harvest predicate."** That cadence was drift,
+reversed upstream by `lance-graph` PR #530 (`E-ODOO-CORE-FIRST-STRUCTURAL`).
+
+The **structural** asks — `target`/`inverse_name`, `inherits_from`,
+`selection_value` — are **Core** facts. Their authoritative home is the typed
+`OdooEntity` Core in `lance-graph-ontology::odoo_blueprint`
+(`OdooField.target` already existed there; `inherits_from` + `selection_value`
+now live in `odoo_blueprint::structural`). The `spo_enrich.py` harvest is the
+**Extracted-leg breadth feeder** for the ~322 ObjectTypes the curated Core has
+not reached — subordinate, not the home (Core wins on convergence).
+
+**Consumer consequence for us:** for structural facts on a *curated* model,
+prefer the typed Core (project from `OdooEntity` / `structural`) over the SPO
+harvest; consume the SPO corpus for **behavioural** facts (`reads_field` deep
+lifts, `emitted_by`, transitive `depends_on`) where it is the genuine source.
+Our `RelationMap::from_corpus` / `InheritanceMap::from_corpus` consumers still
+work (the harvest projects the same triples), but the source-of-truth ordering
+is Core-first.
+
+**`virtually_overrides` (the last open item) is NOT a harvest predicate.** It
+is a ClassView/Core MRO capability — do not request it as `spo_enrich`
+predicate #6.
+
 ## What odoo-rs needs — prioritized
 
 > **2026-06-17 — P0 + P1 RESOLVED upstream.** `lance-graph` PR
