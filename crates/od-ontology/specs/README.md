@@ -142,6 +142,7 @@ method:
 |---|---|---|---|
 | `RecomputeDag` cycle detector | **SHIPPED** | [`crates/od-ontology/src/recompute_dag.rs`](../src/recompute_dag.rs) | Fresh slice 2 (post lance-graph#523 deep-`reads_field`) yields 332 methods / 46 edges `MethodKind::Compute` subset, acyclic. MISSED-1 was a one-directional ordering dep (residual-before-amount), not a cycle — Kahn's algorithm serializes it correctly. Also found a legitimate `_onchange_*` UI loop on the full graph (filtered out by `MethodKind`). Wishlist P0 RESOLVED upstream. |
 | `RelationMap::from_corpus` | **SHIPPED** | [`crates/od-ontology/src/relations.rs`](../src/relations.rs) | Consumes the `target` / `inverse_name` sibling triples lance-graph#523 landed (P1 of the wishlist). 2 tests; fresh slice 2 yields the canonical `line_ids → account_move_line` + `move_id` inverse directly from the corpus. Hand-crafted `slice_2.relations.ndjson` is obsolete. |
+| `InheritanceMap::from_corpus` | **SHIPPED** | [`crates/od-ontology/src/inheritance.rs`](../src/inheritance.rs) | Consumes the `inherits_from` triples lance-graph#526 emits + #527 regen'd into the master corpus (P1 of the wishlist). 6 tests; fresh slice 2 carries 8 edges including `account_move → mail_thread`. Field IRIs as inheritance subjects are correctly rejected. Direct-bases only — transitive MRO is the deferred ClassView design. |
 
 ## Cross-session communication
 

@@ -174,6 +174,24 @@ does. **No substrate-bump required.**
 > cross-language predicate" for the full ask. **This spec stays
 > DRAFT-CONJECTURE; no projection change today.**
 
+> **2026-06-18 — validation_kind LANDED, but as `range` not `lookup`.**
+> lance-graph PR [#526](https://github.com/AdaWorldAPI/lance-graph/pull/526)
+> + corpus regen [#527](https://github.com/AdaWorldAPI/lance-graph/pull/527)
+> shipped `validation_kind`. The fresh corpus carries
+> `(odoo:account_move._check_invoice_currency_rate, validation_kind,
+> "range")` — **not** the `lookup` kind this spec's intuition
+> suggested. The AST classifier reading Odoo's actual Python body
+> detects a `< | > | <= | >=` comparison (likely against a numeric
+> rate value), classifying it as `range`. **The spec's framing was
+> wrong about the underlying detector pattern.** The semantic
+> shape — "a related-row-must-exist guard scoped by (currency,
+> company, date)" — still describes the SurrealQL lowering correctly
+> (the projection's `WHEN` filter + `IF NONE` subquery against
+> `res_currency_rate` is unchanged), but the corpus classifies the
+> *check shape* as range. Useful FINDING: the consumer cannot rely on
+> the validation_kind to predict the SurrealQL emit shape; the kind
+> describes the *AST pattern detected*, not the *semantic role*.
+
 ## Minor sugar gaps surfaced (non-blockers, NOT proposed as Core extensions)
 
 - **`THROW` with interpolated values.** Today's SurrealQL accepts a

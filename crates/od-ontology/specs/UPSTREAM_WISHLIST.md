@@ -76,6 +76,31 @@ to retire its per-method audit ritual.
 > disk** (this host does not carry it); the Rust loader's predicate-
 > histogram match arm is forward-compat ready.
 
+> **2026-06-18 — CORPUS REGEN'D + CONSUMED.** lance-graph PR
+> [#527](https://github.com/AdaWorldAPI/lance-graph/pull/527) (commit
+> `ca810e5`, regen'd on a session with the Odoo source) added 413
+> triples (24 166 → 24 579): **166 `inherits_from`** + **247
+> `validation_kind`** (presence 108 / range 80 / lookup 31 /
+> uniqueness 18 / format 10). Consumer side: shipped
+> `od_ontology::InheritanceMap::from_corpus(&[Triple])` (~120 LOC,
+> 6 tests) — slice 2 lifts 8 `inherits_from` edges and the
+> `account_move` row carries its `mail.thread` base correctly. Slice
+> refresh (slice 1: 1825 / slice 2: 3065 triples).
+>
+> **Consumer FINDING — `validation_kind` describes AST pattern, not
+> SurrealQL emit shape.** The corpus classifies
+> `account_move._check_invoice_currency_rate` as `range`, NOT the
+> `lookup` kind this consumer's spec intuited. The AST classifier
+> reading the Python body detects a numeric comparison. The
+> semantic shape (related-row-must-exist guard scoped by (currency,
+> company, date)) is unchanged at the SurrealQL emit layer; only the
+> framing of *why the kind exists* needed correction. Logged in
+> `_check_invoice_currency_rate.md` 2026-06-18 entry. **The kind
+> predicate is useful for AST-level filtering (find every guard that
+> AST-classifies as range), not for direct SurrealQL emit
+> dispatch — a consumer that wants per-kind specialization has to
+> pair the kind with method-level semantic context.**
+
 ### P0 · Cross-method recompute-ordering DAG  ✓ RESOLVED 2026-06-17
 
 **The minimum primitive.** Given the SPO corpus's `emitted_by` and
@@ -137,7 +162,7 @@ method)` pairs such that no method runs before a method whose
 > predicate, no ClassView interface required.**
 >
 
-### P1 · `_inherit` (mixin) flattening  ✓ RESOLVED 2026-06-17 (extractor; corpus regen pending)
+### P1 · `_inherit` (mixin) flattening  ✓ RESOLVED 2026-06-18 (corpus regen'd via lance-graph#527; consumer's `InheritanceMap::from_corpus` lifts 8 edges from slice 2)
 
 Odoo's `_inherit = 'mail.thread'` is mixin composition. The parent's
 fields / methods / decorators flatten into the child as if declared
@@ -166,7 +191,7 @@ there.
   `inherits_from` triples for Python today (Ruby PR #6 has it; not
   verified for Python yet).
 
-### P1 · `_inherits` (delegation) flattening  ✓ RESOLVED 2026-06-17 (extractor; corpus regen pending)
+### P1 · `_inherits` (delegation) flattening  ✓ RESOLVED 2026-06-18 (corpus regen'd; same `inherits_from` predicate per ruff#19 convention)
 
 Odoo's `_inherits = {'res.partner': 'partner_id'}` is **delegation**
 (distinct from mixin): `self.name` proxies through `self.partner_id.name`.
@@ -416,7 +441,7 @@ This is the lowest-risk corpus enrichment after #18's
 `target` / `inverse_name` (which itself is still pending — see the
 2026-06-17 post-rebase corpus check above).
 
-### ruff#21 — `validation_kind` is a NEW cross-language predicate (and a NEW wishlist item)  ✓ RESOLVED 2026-06-17 (extractor; corpus regen pending)
+### ruff#21 — `validation_kind` is a NEW cross-language predicate (and a NEW wishlist item)  ✓ RESOLVED 2026-06-18 (corpus regen'd via lance-graph#527; 247 kind triples in master, 20 in slice 2; consumer FINDING: kind describes AST pattern, not SurrealQL emit shape — see `_check_invoice_currency_rate.md` 2026-06-18 entry)
 
 `ruff#21` ("feat(ar-shape): emit validation_kind triple per recognised
 Rails validation key") adds `Predicate::ValidationKind` (vocab 55 → 56).
