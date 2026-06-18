@@ -247,7 +247,7 @@ SurrealDB has no native delegation.
   → `name`, `email`, `phone` etc. from `res.partner` appear as accessor
   projections on `res_users`.
 
-### P2 · `virtually_overrides` precedence
+### P2 · `virtually_overrides` precedence  ✓ RESOLVED 2026-06-18 (computed ClassView relation, NOT a harvest predicate)
 
 When a child model `_inherit`s a parent and overrides a `_compute_*` or
 `_check_*` method, the corpus needs to name the precedence so the
@@ -255,9 +255,25 @@ projection emits the WINNING body, not both.
 
 - **Consumer use:** the override winner gets the `DEFINE FUNCTION`
   body; the loser is suppressed or annotated as `-- shadowed_by: <id>`.
-- **Today's gap:** the Odoo SPO extractor likely doesn't emit
-  `virtually_overrides` triples (Ruby PR #9 added them for Rails; not
-  verified for Python). Harvest extension would be needed.
+
+> **2026-06-18 — RESOLVED the Core-correct way (NOT harvest extension).**
+> The earlier "harvest extension would be needed" note was the drift the
+> Core-first correction reversed. `virtually_overrides` is **not a
+> harvested fact** — it is the **derivation** the ClassView computes from
+> the `has_function` + `inherits_from` manifest (the doctrine's
+> `(has_function / inherits_from / virtually_overrides)` triad: the first
+> two are facts, the third is resolved). lance-graph PR
+> [#533](https://github.com/AdaWorldAPI/lance-graph/pull/533) lands it as
+> `odoo_blueprint::mro::resolve_overrides` — nearest-base-wins BFS up the
+> `_inherit` chain (= Python C3 for the linear mixin chains Odoo uses),
+> with `project_virtually_overrides` emitting `(odoo:<child>.<m>,
+> virtually_overrides, odoo:<base>.<m>)` for consumers wanting the corpus
+> shape. **Consumer consequence for us:** to pick the winning body, build
+> the manifest (`has_function` + `inherits_from`, either from the typed
+> Core or the SPO corpus) and call the resolver — do NOT request a
+> `virtually_overrides` harvest predicate. With this, **every wishlist
+> item is home-correct**: P0/P1/P1b/P2/P3 as typed-Core facts +
+> Extracted-leg breadth, and this one as a computed ClassView relation.
 
 ### P3 · Selection-field value enumeration
 
