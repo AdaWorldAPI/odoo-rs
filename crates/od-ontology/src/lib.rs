@@ -50,6 +50,8 @@
 mod emit;
 mod inheritance;
 #[cfg(feature = "ogar-emit")]
+mod ogar_actions;
+#[cfg(feature = "ogar-emit")]
 mod ogar_bridge;
 mod recompute_dag;
 mod relations;
@@ -61,6 +63,11 @@ pub use ogar_bridge::{
     concept_classid, emit_via_ogar, emit_via_ogar_annotated, render_classid, schema_classids,
     schema_to_classes, ODOO_APP_PREFIX,
 };
+
+/// Behavioral-arm lowering — Odoo's reactive lifecycle → `ogar_vocab::ActionDef`
+/// (the sibling of [`schema_to_classes`]). See `specs/W3-BEHAVIORAL-ARM-SCOPE.md`.
+#[cfg(feature = "ogar-emit")]
+pub use ogar_actions::corpus_to_actions;
 
 /// Re-export the canonical OGAR codebook constants (e.g.
 /// `class_ids::BILLABLE_WORK_ENTRY`) so consumers can symbol-bind to the
