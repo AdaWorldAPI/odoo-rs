@@ -174,6 +174,29 @@ fn main() {
         }
     }
 
+    // ── 4b. `--actions` — print the behavioral-arm lowering (ActionDef) ──
+    if parsed.actions {
+        #[cfg(feature = "ogar-emit")]
+        {
+            for (model, predicate, kind, detail) in od_ontology::corpus_action_rows(&triples) {
+                // Respect --focus: only the focused models, when given.
+                if !focus_refs.is_empty() && !focus_refs.iter().any(|&f| f == model) {
+                    continue;
+                }
+                println!("{model}.{predicate}\t{kind}\t{detail}");
+            }
+            return;
+        }
+        #[cfg(not(feature = "ogar-emit"))]
+        {
+            eprintln!(
+                "error: --actions requires the `ogar-emit` feature \
+                 (rebuild: cargo build -p od-ontology --features cli,ogar-emit)"
+            );
+            process::exit(1);
+        }
+    }
+
     let sql = schema.to_sql();
 
     // ── 5. `--validate` (deferred stub) ──
@@ -204,6 +227,7 @@ struct ParsedArgs {
     stats: bool,
     validate: bool,
     classids: bool,
+    actions: bool,
     help: bool,
 }
 
@@ -227,6 +251,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut stats = false;
     let mut validate = false;
     let mut classids = false;
+    let mut actions = false;
     let mut help = false;
     let mut i = 0;
     while i < args.len() {
@@ -235,6 +260,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             "--stats" => stats = true,
             "--validate" => validate = true,
             "--classids" => classids = true,
+            "--actions" => actions = true,
             "-f" | "--focus" => {
                 i += 1;
                 let value = args.get(i).ok_or_else(|| {
@@ -277,6 +303,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         stats,
         validate,
         classids,
+        actions,
         help,
     })
 }
@@ -340,6 +367,9 @@ OPTIONS:
                                 Currently a no-op stub (warns and passes through).
     --classids                  Print the `table → canonical OGAR render classid (0xAABBCCDD)`
                                 map instead of DDL. Requires the `ogar-emit` feature.
+    --actions                   Print the behavioral-arm lowering — one
+                                `model.method <TAB> kind <TAB> detail` row per ActionDef
+                                (kind = depends|guard). Respects --focus. Requires `ogar-emit`.
     -h, --help                  Show this help.
 
 EXIT CODES (lance-graph#512 convention):
@@ -362,12 +392,20 @@ mod tests {
         assert!(!p.stats);
         assert!(!p.validate);
         assert!(!p.classids);
+        assert!(!p.actions);
     }
 
     #[test]
     fn parse_args_classids_flag() {
         let p = parse_args(&["--classids".into()]).unwrap();
         assert!(p.classids);
+    }
+
+    #[test]
+    fn parse_args_actions_flag() {
+        let p = parse_args(&["--actions".into()]).unwrap();
+        assert!(p.actions);
+        assert!(!p.classids);
     }
 
     #[test]
