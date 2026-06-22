@@ -67,7 +67,7 @@ pub use ogar_bridge::{
 /// Behavioral-arm lowering — Odoo's reactive lifecycle → `ogar_vocab::ActionDef`
 /// (the sibling of [`schema_to_classes`]). See `specs/W3-BEHAVIORAL-ARM-SCOPE.md`.
 #[cfg(feature = "ogar-emit")]
-pub use ogar_actions::corpus_to_actions;
+pub use ogar_actions::{corpus_action_rows, corpus_to_actions};
 
 /// Re-export the canonical OGAR codebook constants (e.g.
 /// `class_ids::BILLABLE_WORK_ENTRY`) so consumers can symbol-bind to the

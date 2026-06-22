@@ -105,6 +105,35 @@ pub fn corpus_to_actions(triples: &[Triple]) -> Vec<ActionDef> {
     out
 }
 
+/// Inspection-friendly rows over [`corpus_to_actions`] — one
+/// `(object_class, predicate, kind, detail)` per `ActionDef`, where `kind` is
+/// `"depends"` or `"guard"` and `detail` is the joined dependency paths or the
+/// `"event (policy)"` of the guard. Keeps the `ogar_vocab` enum match *inside*
+/// this crate so a consumer (the `od-codegen --actions` CLI) can print the
+/// lowering without depending on `ogar-vocab` or matching its
+/// `#[non_exhaustive]` enums. Order mirrors [`corpus_to_actions`].
+#[must_use]
+pub fn corpus_action_rows(triples: &[Triple]) -> Vec<(String, String, String, String)> {
+    corpus_to_actions(triples)
+        .into_iter()
+        .map(|a| {
+            let (kind, detail) = match &a.kausal {
+                Some(KausalSpec::Depends { paths }) => ("depends".to_string(), paths.join(", ")),
+                Some(KausalSpec::LifecycleTrigger { event }) => {
+                    let policy = match a.guard_failure_policy {
+                        Some(GuardFailurePolicy::Reject) => "reject",
+                        Some(GuardFailurePolicy::Postponable) => "postpone",
+                        _ => "?",
+                    };
+                    ("guard".to_string(), format!("{event} ({policy})"))
+                }
+                _ => ("other".to_string(), String::new()),
+            };
+            (a.object_class, a.predicate, kind, detail)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +292,35 @@ mod tests {
                 other => panic!("unexpected kausal in v1 lowering: {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn action_rows_format_depends_and_guard() {
+        let triples = vec![
+            t("odoo:m", "has_function", "odoo:m._compute_x"),
+            t("odoo:m._compute_x", "reads_field", "odoo:m.a"),
+            t("odoo:m._compute_x", "reads_field", "odoo:m.b"),
+            t("odoo:m", "has_function", "odoo:m._check_y"),
+            t("odoo:m._check_y", "raises", "exc:ValidationError"),
+        ];
+        let rows = corpus_action_rows(&triples);
+        // sorted by method identity: _check_y before _compute_x
+        assert_eq!(
+            rows,
+            vec![
+                (
+                    "m".to_string(),
+                    "_check_y".to_string(),
+                    "guard".to_string(),
+                    "before_save (reject)".to_string()
+                ),
+                (
+                    "m".to_string(),
+                    "_compute_x".to_string(),
+                    "depends".to_string(),
+                    "m.a, m.b".to_string()
+                ),
+            ]
+        );
     }
 }
