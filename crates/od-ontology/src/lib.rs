@@ -49,10 +49,15 @@
 
 mod emit;
 mod inheritance;
+#[cfg(feature = "ogar-emit")]
+mod ogar_bridge;
 mod recompute_dag;
 mod relations;
 mod surreal_ast;
 mod triple;
+
+#[cfg(feature = "ogar-emit")]
+pub use ogar_bridge::{emit_via_ogar, schema_to_classes};
 
 pub use emit::corpus_to_schema;
 pub use inheritance::InheritanceMap;

@@ -13,11 +13,29 @@ repository = "https://github.com/AdaWorldAPI/odoo-rs"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# OGAR canonical layer — pulled ONLY under the `ogar-emit` feature (Stage 1
+# of the odoo-rs <-> OGAR convergence). The default build stays serde-only;
+# these add the shared `ogar_vocab::Class` IR + the `ogar-adapter-surrealql`
+# emitter so the bespoke `Schema` can be lowered onto the canonical layer and
+# emitted ALONGSIDE the native path (never replacing it). AdaWorldAPI fork,
+# public repo (no auth), pinned by rev for reproducibility — OGAR main @ #94
+# (OdooPort). `ogar-adapter-surrealql` default features are dep-light: its
+# emit path is `ogar-vocab` + a hand-written formatter (zero surrealdb-core),
+# the same "mirror the catalog shape" design this crate already uses.
+ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "08a9c979d8939e1303770ea32aa2010928e79318", optional = true }
+ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "08a9c979d8939e1303770ea32aa2010928e79318", optional = true }
+
 [features]
 # Opt-in CLI (mirrors openproject-nexgen-rs#31's `--features cli` discipline).
 # Lib consumers without the feature pay zero extra cost; the bin + its tests
 # only compile under this flag.
 cli = []
+# Stage 1 parallel-emit convergence path. Lowers the bespoke `Schema` onto
+# `ogar_vocab::Class` and emits via `ogar-adapter-surrealql`, ALONGSIDE the
+# native `ToSql` emit — additive, never replacing. Lib consumers without the
+# feature pay zero cost; the bridge module + its convergence test only
+# compile under this flag.
+ogar-emit = ["dep:ogar-vocab", "dep:ogar-adapter-surrealql"]
 
 [[bin]]
 name = "od-codegen"
