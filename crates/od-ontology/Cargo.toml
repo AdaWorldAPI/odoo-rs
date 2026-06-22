@@ -22,6 +22,12 @@ serde_json = "1"
 # (OdooPort). `ogar-adapter-surrealql` default features are dep-light: its
 # emit path is `ogar-vocab` + a hand-written formatter (zero surrealdb-core),
 # the same "mirror the catalog shape" design this crate already uses.
+# Pin verification (2026-06-22, integration review R5): rev 08a9c979 IS the
+# #94 merge commit — the earliest rev carrying OdooPort + all 9 ODOO_ALIASES
+# (incl. account.analytic.line -> BILLABLE_WORK_ENTRY 0x0103). OGAR main has
+# since advanced to 5ee87b5 (post-#96); the intervening #95/#96 commits are
+# additive/test-only (no OdooPort API change), so no bump is required. A bump
+# is a deliberate, reviewable, re-gated step — not a maintenance default.
 ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "08a9c979d8939e1303770ea32aa2010928e79318", optional = true }
 ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "08a9c979d8939e1303770ea32aa2010928e79318", optional = true }
 
@@ -41,6 +47,14 @@ ogar-emit = ["dep:ogar-vocab", "dep:ogar-adapter-surrealql"]
 name = "od-codegen"
 path = "src/bin/od_codegen.rs"
 required-features = ["cli"]
+
+# End-to-end "pull OGAR via class" demo. Uses the `ogar-emit`-gated classid
+# surface (concept_classid / render_classid / schema_classids /
+# emit_via_ogar_annotated), so it only builds under the feature — otherwise a
+# default `cargo build --examples` would fail on the gated symbols.
+[[example]]
+name = "classid_pull"
+required-features = ["ogar-emit"]
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }

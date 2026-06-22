@@ -68,6 +68,37 @@ pub fn emit_via_ogar(schema: &Schema) -> String {
     ogar_adapter_surrealql::emit_surrealql_ddl(&schema_to_classes(schema))
 }
 
+/// [`emit_via_ogar`] DDL, but with each codebook table's canonical OGAR render
+/// classid stamped into its `DEFINE TABLE … COMMENT 'classid:0xAABBCCDD'` clause
+/// — so the id rides into `SurrealDB`'s own catalog metadata (queryable via
+/// `INFO FOR TABLE`), not just the emitted `.surql` text. A `--` line-comment
+/// would evaporate at parse time; the `COMMENT` clause survives ingestion.
+///
+/// Purely additive over [`schema_to_classes`]: a table outside the codebook
+/// gets no classid comment (its structural DDL is byte-identical to the native
+/// [`emit_via_ogar`]). Only the full APP‖class render id (the hex) is stamped
+/// today — the human-readable concept *name* awaits an OGAR-side
+/// `id → concept-name` reverse lookup (see `specs/UPSTREAM_WISHLIST.md`,
+/// `PROBE-OGAR-ID-TO-CONCEPT-NAME`).
+#[must_use]
+pub fn emit_via_ogar_annotated(schema: &Schema) -> String {
+    let classes: Vec<Class> = schema
+        .tables
+        .iter()
+        .map(|table| {
+            let mut class = table_to_class(table);
+            // Identity stamp: the render classid rides into the catalog COMMENT
+            // (the emitter renders `class.description` as `… COMMENT '<desc>'`).
+            // Uncodified tables keep `description = None` → no classid clause.
+            if let Some(id) = render_classid(&table.name) {
+                class.description = Some(format!("classid:0x{id:08X}"));
+            }
+            class
+        })
+        .collect();
+    ogar_adapter_surrealql::emit_surrealql_ddl(&classes)
+}
+
 // ── Canonical classid pull (the "pull OGAR via class" deliverable) ──────
 //
 // `schema_to_classes` above lowers *structure* (tables → `Class` shells with
@@ -107,6 +138,16 @@ pub const ODOO_APP_PREFIX: u16 = 0x0002;
 /// `account_move` → `0x0202` (`COMMERCIAL_DOCUMENT`), `account_analytic_line` →
 /// `0x0103` (`BILLABLE_WORK_ENTRY`, the cross-arm bridge), `res_partner` →
 /// `0x0204` (`BILLING_PARTY`).
+///
+/// **Scope caveat — `_`→`.` is not a universal bijection.** The normalize is
+/// lossless for all nine codebook aliases: each alias consists of dot-separated
+/// single-word segments (no underscore inside a segment), so
+/// `account_analytic_line` → `account.analytic.line` is an exact round-trip.
+/// Odoo localization and multi-word module classes that carry an underscore
+/// *inside* a segment (e.g. `l10n_es_edi_document`, `im_livechat_channel`) are
+/// intentionally out of codebook scope and resolve to `None` — a fail-safe miss,
+/// never a wrong id. Callers that need to map such names should maintain their
+/// own alias table rather than extending the `_`→`.` heuristic.
 #[must_use]
 pub fn concept_classid(model: &str) -> Option<u16> {
     OdooPort::class_id(&model.replace('_', ".")).or_else(|| OdooPort::class_id(model))
@@ -352,6 +393,51 @@ mod tests {
                 ("account_analytic_line".to_string(), Some(0x0103)),
                 ("ir_cron".to_string(), None),
             ]
+        );
+    }
+
+    // ── emit_via_ogar_annotated ─────────────────────────────────────────
+
+    #[test]
+    fn emit_via_ogar_annotated_stamps_classid_into_comment_clause() {
+        let schema = Schema {
+            tables: vec![
+                TableDefinition::new("account_move"),
+                TableDefinition::new("ir_cron"),
+            ],
+            functions: Vec::new(),
+            events: Vec::new(),
+        };
+        let ddl = emit_via_ogar_annotated(&schema);
+        // Codebook hit: account_move render classid 0x0002_0202 rides into the
+        // catalog COMMENT (single-quoted SurrealQL string literal), so it
+        // survives SurrealDB ingestion rather than evaporating as a `--` line.
+        assert!(
+            ddl.contains("COMMENT 'classid:0x00020202'"),
+            "account_move must carry its render classid in a COMMENT clause; got:\n{ddl}"
+        );
+        // Codebook miss: ir_cron stays unstamped — exactly one classid clause.
+        assert_eq!(
+            ddl.matches("classid:").count(),
+            1,
+            "only the codebook table (account_move) is stamped, not ir_cron; got:\n{ddl}"
+        );
+    }
+
+    #[test]
+    fn emit_via_ogar_annotated_is_additive_over_native_emit() {
+        // For a wholly-uncodified schema, no classid is stamped, so the
+        // annotated emit is byte-identical to the native parallel emit — the
+        // stamp is strictly additive, never a structural rewrite.
+        let schema = Schema {
+            tables: vec![TableDefinition::new("ir_cron")],
+            functions: Vec::new(),
+            events: Vec::new(),
+        };
+        assert_eq!(
+            emit_via_ogar_annotated(&schema),
+            emit_via_ogar(&schema),
+            "an uncodified-only schema must emit identical DDL via both paths"
         );
     }
 }

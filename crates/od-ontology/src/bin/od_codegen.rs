@@ -152,9 +152,31 @@ fn main() {
         process::exit(2);
     }
 
+    // ── 4. `--classids` — print table → OGAR render classid map ──
+    if parsed.classids {
+        #[cfg(feature = "ogar-emit")]
+        {
+            for table in &schema.tables {
+                match od_ontology::render_classid(&table.name) {
+                    Some(id) => println!("{}\t0x{id:08X}", table.name),
+                    None => println!("{}\t(uncodified)", table.name),
+                }
+            }
+            return;
+        }
+        #[cfg(not(feature = "ogar-emit"))]
+        {
+            eprintln!(
+                "error: --classids requires the `ogar-emit` feature \
+                 (rebuild: cargo build -p od-ontology --features cli,ogar-emit)"
+            );
+            process::exit(1);
+        }
+    }
+
     let sql = schema.to_sql();
 
-    // ── 4. `--validate` (deferred stub) ──
+    // ── 5. `--validate` (deferred stub) ──
     if parsed.validate {
         eprintln!(
             "warning: --validate is a deferred stub (surrealdb-core parser not wired yet); \
@@ -162,7 +184,7 @@ fn main() {
         );
     }
 
-    // ── 5. Write ──
+    // ── 6. Write ──
     if let Err(e) = write_output(&parsed.output, &sql) {
         eprintln!("error writing output: {e}");
         process::exit(1);
@@ -181,6 +203,7 @@ struct ParsedArgs {
     relations: Option<PathBuf>,
     stats: bool,
     validate: bool,
+    classids: bool,
     help: bool,
 }
 
@@ -203,6 +226,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut relations: Option<PathBuf> = None;
     let mut stats = false;
     let mut validate = false;
+    let mut classids = false;
     let mut help = false;
     let mut i = 0;
     while i < args.len() {
@@ -210,6 +234,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
             "-h" | "--help" => help = true,
             "--stats" => stats = true,
             "--validate" => validate = true,
+            "--classids" => classids = true,
             "-f" | "--focus" => {
                 i += 1;
                 let value = args.get(i).ok_or_else(|| {
@@ -251,6 +276,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         relations,
         stats,
         validate,
+        classids,
         help,
     })
 }
@@ -312,6 +338,8 @@ OPTIONS:
     --validate                  Reserved — when wired, routes the emitted DDL through
                                 `surrealdb_core::syn::parse` and exits 2 on syntax error.
                                 Currently a no-op stub (warns and passes through).
+    --classids                  Print the `table → canonical OGAR render classid (0xAABBCCDD)`
+                                map instead of DDL. Requires the `ogar-emit` feature.
     -h, --help                  Show this help.
 
 EXIT CODES (lance-graph#512 convention):
@@ -333,6 +361,13 @@ mod tests {
         assert!(p.relations.is_none());
         assert!(!p.stats);
         assert!(!p.validate);
+        assert!(!p.classids);
+    }
+
+    #[test]
+    fn parse_args_classids_flag() {
+        let p = parse_args(&["--classids".into()]).unwrap();
+        assert!(p.classids);
     }
 
     #[test]

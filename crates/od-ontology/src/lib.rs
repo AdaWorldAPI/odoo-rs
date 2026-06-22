@@ -58,9 +58,15 @@ mod triple;
 
 #[cfg(feature = "ogar-emit")]
 pub use ogar_bridge::{
-    concept_classid, emit_via_ogar, render_classid, schema_classids, schema_to_classes,
-    ODOO_APP_PREFIX,
+    concept_classid, emit_via_ogar, emit_via_ogar_annotated, render_classid, schema_classids,
+    schema_to_classes, ODOO_APP_PREFIX,
 };
+
+/// Re-export the canonical OGAR codebook constants (e.g.
+/// `class_ids::BILLABLE_WORK_ENTRY`) so consumers can symbol-bind to the
+/// shared ids rather than copy hex literals.
+#[cfg(feature = "ogar-emit")]
+pub use ogar_vocab::class_ids;
 
 pub use emit::corpus_to_schema;
 pub use inheritance::InheritanceMap;
