@@ -42,6 +42,29 @@ subset; `unmap` from DDL alone reconstructs an empty/default `Class` for
 everything source-side. That is the honest version, not a bug — never claim a
 behavioral `parse(emit(parse(x))) == parse(x)` through DDL.
 
+## The classid is an address, not a carrier (why DDL *can't* hold the magic)
+
+The deepest cut (cross-session consensus, OGAR #99 / lance-graph #591): a
+`classid` carries **no magic at all** — it is pure address. The Rails
+"class-magic" (callbacks, validations, `before_save`, associations) is not *in*
+the id; it is what the id **resolves to**:
+
+```
+classid (dumb 32-bit key) ─┬─►  ClassView              ← the SKIN  (render/structure)
+                           └─►  ActionDef + KausalSpec  ← the MAGIC (behavior / FSM)
+        hi u16 = which app's SKIN (render lens)   ·   lo u16 = WHAT it is (domain:concept)
+```
+
+So even the **high u16 selects render magic, never class magic** — it picks
+*whose ClassView/Askama template skins the concept*, not the behavior. Class
+magic is a property of the Core type the classid points at, never of the
+address. This is the Core-First `identity = classid` rule, and it is *exactly*
+why the trap is a trap: **DDL carries the address-shaped structure but not the
+Core**, so emitting `DEFINE EVENT` to "hold the lifecycle" is smuggling a Core
+property (behavior) into a thing that can only ever carry the address (shape).
+The id addresses; the Core behaves. Lower behavior to `ActionDef` (the value),
+never into the id, the COMMENT, or the DDL (the key).
+
 ## Diagnostic signatures (for review — and an honest note about THIS crate)
 
 - `.surql` files with `DEFINE EVENT … WHEN … THEN …` doing more than row triggers
