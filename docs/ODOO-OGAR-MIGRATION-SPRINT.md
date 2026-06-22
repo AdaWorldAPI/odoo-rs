@@ -99,3 +99,37 @@ subscribe to PR activity, continue autoattended.
   `target/` (keep lance-graph's 2.9 G unless space-critical).
 - **`ogar-emit`-gated.** Default build stays serde-only; the pull + tests
   compile only under `--features ogar-emit`.
+
+---
+
+## Sprint outcome (2026-06-22) — SHIPPED
+
+The 5+3 sprint + 5+3 review ran to completion. Status against the plan:
+
+| Worker | Planned | Outcome |
+|---|---|---|
+| S1 | classid-in-DDL | ✅ `emit_via_ogar_annotated` — classid in the `DEFINE TABLE … COMMENT 'classid:0x00020202'` clause (review-corrected from a `--` header, which SurrealDB drops at parse time). + `class_ids` re-export. |
+| S2 | convergence-pin test | ✅ `tests/odoo_ogar_convergence.rs` — symbol-bound, full-surface, + negative pin (7 tests). |
+| S3 | CLI surface | ✅ `od-codegen --classids` — verified end-to-end on `data/slice_2.spo.ndjson`. |
+| S4 | docs | ✅ README "Pulling the canonical classid (OGAR)" section. |
+| S5 | rev-freshness | ✅ Cargo.toml pin-freshness annotation (08a9c979 = #94 merge; main 5ee87b5 additive/test-only). |
+| +Wave B | — | ✅ `examples/classid_pull.rs` — the full pull end to end. |
+
+**5+3 review (two rounds, 10 specialist reviews):** unanimous LAND.
+`brutally-honest-tester` (toolchain) · `baton-handoff-auditor` CLEAN ·
+`core-first-architect` TARGETS-CORE · `convergence-architect` OPPORTUNITY ·
+`integration-lead` LANDS CLEANLY.
+
+**Auto-resolved from review:** R4's COMMENT-clause seam (the classid now
+survives into SurrealDB's catalog, not just the `.surql` file).
+
+**Filed, not forced:** `PROBE-OGAR-ID-TO-CONCEPT-NAME`
+(`specs/UPSTREAM_WISHLIST.md`) — the concept-*name* enrichment + the
+`canonical_concept`-on-`Class` fusion are gated on an OGAR-side `u16 → &str`
+reverse lookup that doesn't exist yet.
+
+**Tests:** 32 lib + 6 bin + 7 convergence + 23 integration/doc green under
+`--features cli,ogar-emit`; clippy exit 0 (zero new warnings); fmt-clean.
+
+Shipped as odoo-rs PR #3 on `claude/odoo-classid-consume` (builds on the
+merged #2 classid pull).
