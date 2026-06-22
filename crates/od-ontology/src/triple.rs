@@ -1,13 +1,160 @@
-//! The SPO triple corpus — input to the ontology projection.
+//! The SPO triple corpus — the **AST** input to the OGAR compiler.
 //!
-//! Byte-identical shape to `lance_graph::graph::spo::odoo_ontology` (the
-//! `{"s","p","o","f","c"}` ndjson) and to `ruff_spo_triplet::ndjson`. The
-//! corpus is produced once by the Python frontend (`ruff_python_dto_check` +
-//! `odoo-blueprint-extractor`); this crate only *reads* it.
+//! # The compiler frame (operator-named 2026-06-22)
+//!
+//! `lance-graph` on top of OGAR is acting like a **compiler**, and the SPO
+//! corpus is the **AST** that compiler consumes. The implication every
+//! consumer of this module must hold: the AST has to *think like a compiler
+//! input* — typed nodes (the 13 predicates below), provenance on every node
+//! (the four truth bands below), and references that are well-formed even
+//! when they resolve outside the current compilation unit ("externs",
+//! resolved by the symbol table = OGAR `ClassView`, not by the slice).
+//!
+//! The pipeline:
+//!
+//! ```text
+//!   Odoo source  ─[ruff_python_dto_check + odoo-blueprint-extractor]→  AST (this corpus)
+//!                                       │
+//!                                       │ frontend: parse_ndjson  (this module)
+//!                                       ▼
+//!                            Vec<Triple>  (the typed AST)
+//!                                       │
+//!                                       │ lowering passes (sibling modules):
+//!                                       │   schema_to_classes   → ogar_vocab::Class    (structure)
+//!                                       │   corpus_to_actions   → ogar_vocab::ActionDef (behaviour)
+//!                                       ▼
+//!                                  OGAR IR
+//!                                       │
+//!                                       │ codegen (egress adapters):
+//!                                       │   ogar-adapter-surrealql   → DEFINE TABLE / FIELD
+//!                                       │   ogar-adapter-ttl         → TTL
+//!                                       │   (future) ogar-from-odoo  → reusable lifter
+//!                                       ▼
+//!                                  Target text / runtime
+//! ```
+//!
+//! odoo-rs is the **Odoo language frontend** of that compiler (the per-source
+//! glue); OGAR `Class`/`ActionDef` is the **IR**; lance-graph + the adapters
+//! are the **compiler middle/back end**. The predicate vocabulary below IS
+//! the AST node-type set — adding a 14th predicate is a language change, not
+//! a documentation update.
+//!
+//! Byte-identical shape to `ruff_spo_triplet::ndjson` and (until the
+//! repatriation completes) to `lance_graph::graph::spo::odoo_ontology` — see
+//! `specs/REPATRIATION-FRAME.md`. The corpus is produced once by the Python
+//! frontend (`ruff_python_dto_check` + `odoo-blueprint-extractor`); this crate
+//! only *reads* it. **The schema below is the consumer-side source of truth.**
 //!
 //! IRI shape: `odoo:<model>.<member>` where the single dot separates model
 //! from member, and dotted *dependency paths* (`account_move.line_ids.balance`)
 //! are emitted verbatim — the cross-record reactive signal.
+//!
+//! # Triple schema (13 predicates × 3 provenance bands)
+//!
+//! | predicate            | subject              | object               | provenance |
+//! | ---                  | ---                  | ---                  | --- |
+//! | `rdf:type`           | `odoo:<family>`      | `ogit:ObjectType`    | structural |
+//! | `rdf:type`           | `odoo:<fam>.<field>` | `ogit:Property`      | structural |
+//! | `rdf:type`           | `odoo:<fam>.<fn>`    | `ogit:Function`      | structural |
+//! | `has_function`       | `odoo:<family>`      | `odoo:<fam>.<fn>`    | structural |
+//! | `emitted_by`         | `odoo:<fam>.<field>` | `odoo:<fam>.<fn>`    | body write (authoritative) |
+//! | `depends_on`         | `odoo:<fam>.<field>` | `odoo:<fam>.<dep>`   | `@api.depends` arg (authoritative) |
+//! | `reads_field`        | `odoo:<fam>.<fn>`    | `odoo:<fam>.<field>` | body read (inferred) |
+//! | `raises`             | `odoo:<fam>.<fn>`    | `exc:<Type>`         | body raise (authoritative) |
+//! | `traverses_relation` | `odoo:<fam>.<fn>`    | `odoo:<fam>.<rel>`   | body for-loop (inferred) |
+//! | `target`             | `odoo:<fam>.<rel>`   | `"<comodel.dotted>"` | relational comodel (declared) |
+//! | `inverse_name`       | `odoo:<fam>.<rel>`   | `"<inverse>"`        | One2many/inverse (declared) |
+//! | `inherits_from`      | `odoo:<family>`      | `odoo:<base_family>` | `_inherit`/`_inherits` base (declared) |
+//! | `validation_kind`    | `odoo:<fam>.<fn>`    | `"<kind>"`           | `@api.constrains` body pattern (inferred) |
+//! | `selection_value`    | `odoo:<fam>.<field>` | `"<value_key>"`      | `fields.Selection` enum key (declared) |
+//!
+//! ## Truth-value provenance bands
+//!
+//! NARS `(frequency, confidence)` carries the provenance — **four** bands
+//! pinned by the corpus regression test:
+//!
+//! - **structural-declaration** `(1.0, 1.0)` — `rdf:type`. The class
+//!   definition itself declares the node's kind; certain.
+//! - **structural-membership** `(1.0, 0.95)` — `has_function`. The class
+//!   declares the function as a member; certain *that* the function exists,
+//!   slightly less certain whether the harvest's enumeration is exhaustive
+//!   (a per-emitter or partial extract may legitimately omit some).
+//! - **decorator / body-authoritative** `(0.95, 0.9)` — `emitted_by`,
+//!   `depends_on`, `raises`, `target`, `inverse_name`, `inherits_from`,
+//!   `selection_value`. Lifted from a decorator argument or an unambiguous
+//!   AST write/raise/relation.
+//! - **body-inferred** `(0.85, 0.75)` — `reads_field`, `traverses_relation`,
+//!   `validation_kind`. Inferred from method-body AST patterns where the
+//!   match is heuristic, not certain.
+//!
+//! Downstream truth-aware queries filter by expectation; a hit on a
+//! structural edge outweighs three hits on body-inferred edges.
+//!
+//! # The "a + b → c through d?" Foundry query (what the corpus is FOR)
+//!
+//! The Foundry compute graph answers *"which field `c` does method `d` emit
+//! when inputs `a` and `b` change?"* by composing two reverse `depends_on`
+//! lookups + one `emitted_by` lookup:
+//!
+//! ```text
+//!   {c : (c depends_on a) ∧ (c depends_on b)}   then   {d : (c emitted_by d)}
+//! ```
+//!
+//! This is a **graph deduction over the loaded triples** — not a similarity
+//! search, not an LLM call. It is the structural read of Odoo's reactive
+//! compute graph, and the universal pattern any ORM-with-lifecycle exposes
+//! once the SPO vocabulary above is canonical.
+//!
+//! # Enrichment layers (additive over the base extraction)
+//!
+//! Two predicate families layer on top of the base AST extraction (the
+//! `odoo-blueprint-extractor`'s `spo_enrich` pass):
+//!
+//! - **`target` / `inverse_name`** — for every relational field
+//!   (Many2one / One2many / Many2many / Reference) whose comodel resolves from
+//!   the Odoo source, a sibling triple keyed by the relation IRI carries the
+//!   *raw* dotted comodel name (e.g.
+//!   `(odoo:account_move.line_ids, target, "account.move.line")` +
+//!   `(…, inverse_name, "move_id")`). This is the cross-language analog of
+//!   ruff#18's `(WorkPackage.owner, class_name, "User")` — same shape, Odoo
+//!   side. It resolves the phantom-target case where `invoice_line_ids` would
+//!   otherwise lift to a `record<invoice_line>` that doesn't exist (the real
+//!   comodel is `account.move.line`).
+//! - **deep `reads_field`** — each `@api.depends('rel.leaf', …)` whose `rel`
+//!   is a relational field is resolved through the `target` map and the
+//!   transitive read lifted onto the field's emitting method: e.g.
+//!   `(odoo:account_move._compute_amount, reads_field,
+//!   odoo:account_move_line.amount_residual)` is emitted *in addition to* the
+//!   shallow relation read. This surfaces the cross-model recompute-ordering
+//!   edge that the surface-only corpus would leave invisible to
+//!   [`crate::RecomputeDag`].
+//!
+//! ## `_inherit`-only extension classes
+//!
+//! Relational fields declared on an extension class
+//! (`_inherit = "account.move"` with no `_name` — the common Odoo extension
+//! form) still get their `target` / `inverse_name` lifted. Without this
+//! correction the extension's fields would be dropped silently.
+//!
+//! ## Multi-emitter deep reads
+//!
+//! A field emitted by more than one method (e.g. `stock_move.quantity` is
+//! emitted by both `_compute_quantity` AND `_onchange_product_uom_qty`) has
+//! its deep `reads_field` lifted onto **every** emitter, not just the last —
+//! otherwise the recompute-ordering edge drops for whichever emitter the
+//! enrichment skipped.
+//!
+//! # Repatriation note
+//!
+//! The schema above used to live solely in
+//! `lance_graph::graph::spo::odoo_ontology` (the generic graph spine — wrong
+//! altitude per `specs/REPATRIATION-FRAME.md`). Pulled here in Phase 1: the
+//! consumer that *uses* the SPO vocabulary now owns its documentation. A
+//! later phase pushes the universal SPO predicates (`has_function`,
+//! `emitted_by`, `depends_on`, `reads_field`, `raises`, `target`) to OGAR /
+//! ruff as the universal cross-language vocabulary, leaving Odoo-specific
+//! predicates (`validation_kind`, `inverse_name`, `inherits_from`,
+//! `selection_value`, `traverses_relation`) here as muscle memory.
 
 use serde::Deserialize;
 
