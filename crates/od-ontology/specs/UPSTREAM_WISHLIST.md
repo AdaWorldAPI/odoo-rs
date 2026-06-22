@@ -373,6 +373,48 @@ trap a `core-gap-auditor` pass already corrected this session).
 > No `RelationMap::from_corpus` will be written until the extractor
 > emits the predicate.
 
+### P2 · `action_*` state-transition predicate (the `EnterEffect` / Rubicon-crossing source)
+
+> Filed 2026-06-22 (behavioral-arm lowering, `corpus_to_actions` / od-ontology PR #9).
+
+`corpus_to_actions` (`ogar_actions.rs`) lowers two of the three behavioral
+arms from facts the corpus already carries:
+
+- **Compute** — `_compute_*` + `reads_field` → `ActionDef{ kausal: Depends{paths} }`.
+- **Constrains** — a method that `raises` → `ActionDef{ kausal: LifecycleTrigger, guard_failure_policy: Reject }`.
+
+The **third arm — the `action_*` state crossing** (Odoo's
+`def action_post(self): ... self.write({'state': 'posted'})`) — has **no corpus
+source.** The extractor emits `has_function` / `reads_field` / `emitted_by` /
+`depends_on` / `raises` (compute + guard signals) but **nothing that says a
+method WRITES a state field to a value.** So the Rubicon crossing — OGAR's
+`ActionDef.on_enter = EnterEffect::transition("state", "posted")` + the
+`Pending → Committed` FSM — cannot be lowered.
+
+**The ask (same shape ruff#18 ratified — a per-method override lifted into a
+keyed sibling SPO triple):** emit a state-write fact for `action_*` methods,
+e.g.
+
+```
+(odoo:account_move.action_post, transitions_to, "account_move.state:posted")
+```
+
+or the decomposed pair `(method, writes_field, "account_move.state")` +
+`(method, writes_value, "posted")`.
+
+- **Consumer use:** with the predicate, `corpus_to_actions` lowers each
+  `action_*` method → `ActionDef{ on_enter: EnterEffect::transition(field,
+  value), default_subject: User }`, completing the behavioral arm so the **full**
+  Odoo lifecycle (draft → posted → cancelled), not just reactive compute +
+  guards, maps onto OGAR's Rubicon FSM (`ogar_vocab::EnterEffect` / `ActionState`).
+- **Status:** **OPEN.** This is a *producer-side fact gap, NOT a Core gap* — the
+  Core vocabulary (`EnterEffect`, OGAR #97) already exists and od-ontology already
+  pins it; only the corpus predicate is missing. Until it lands, `corpus_to_actions`
+  emits the compute + guard arms and skips `action_*` (documented in
+  `ogar_actions.rs` module docs). No `EnterEffect` lowering will be written until
+  the extractor emits the predicate — the same discipline as the P1 FK-target ask
+  above (no synthesis from a missing fact).
+
 ## What odoo-rs explicitly does NOT need (scope-fencing)
 
 - A **runtime ClassView dispatcher**. We codegen-flatten at DDL emit
