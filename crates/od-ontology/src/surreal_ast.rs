@@ -1,3 +1,14 @@
+//! > ⚠️ **PRE-FLIGHT (OGAR #99 — SurrealQL-AST trap).** Before treating this
+//! > AST as the IR / spine — or adding a `From<Ddl…> for ActionDef`, a
+//! > behavioral roundtrip claim, or `DEFINE EVENT` lifecycle — read
+//! > `specs/SURREAL-AST-TRAP.md` (90-second Q1–Q5 mirror). This file is an
+//! > **egress adapter, not a spine.** Structure lowers through
+//! > `ogar_vocab::Class` (DDL is a *lossy projection* of it, one-way); behavior
+//! > (compute / `@api.constrains` / actions) has **no DDL home** and lowers to
+//! > OGAR's `ActionDef` arm, never `DEFINE EVENT`. The mapping table below is
+//! > the structural projection only — it is not a claim that lifecycle round-
+//! > trips through DDL.
+//!
 //! Typed SurrealQL DDL AST — the shape Odoo's ontology lowers into.
 //!
 //! This is **not** a migration target and **not** an ORM schema. It is the
