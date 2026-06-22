@@ -61,6 +61,83 @@
 //! alignment data + the classifier + the lookup surface land here.
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Namespace identity — Odoo inherits from FIBO Foundations (Layer-1 declaration)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// The Odoo TTL namespace IRI. Every Odoo concept declared in the harvested
+/// ontology lives under this base.
+pub const ODOO_NAMESPACE_IRI: &str = "https://ada.world/onto/odoo#";
+
+/// The Odoo OGAR ontology identity bundle. Pulled from
+/// `lance_graph_ontology::hydrators::odoo` (Phase-2 repatriation).
+/// Mirrors the lance-graph-ontology constants used to register the Odoo TTL
+/// bundle into the `OntologyRegistry`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OntologyBundleId {
+    /// The bundle's graph id. `0x0002 = "Odoo"` per OGAR's app-prefix
+    /// allocation (`OdooPort::APP_PREFIX`).
+    pub graph: u32,
+    /// Schema version major (incremented on breaking schema changes).
+    pub version: u32,
+}
+
+/// `OGIT::ODOO_V1` — the Odoo ontology identity bundle.
+pub const ODOO_BUNDLE_ID: OntologyBundleId = OntologyBundleId {
+    graph: 0x0002,
+    version: 1,
+};
+
+/// `OGIT::FIBOFND_V1` — the FIBO Foundations bundle Odoo inherits from.
+/// The cascade resolves Odoo concepts THROUGH this bundle (a Layer-1
+/// inheritance: `inherits_from: Some(OGIT::FIBOFND_V1.0)` in lance-graph's
+/// hydrator).
+///
+/// **This is the literal "Odoo inheriting classes" declaration** — the
+/// namespace-level statement that Odoo's classes are equivalent to / subclass
+/// of FIBO Foundations concepts. The per-class `owl:equivalentClass` rows in
+/// [`ODOO_SEED`] are the instances of this inheritance; this constant is the
+/// declaration.
+pub const ODOO_INHERITS_FROM_FIBOFND_V1: OntologyBundleId = OntologyBundleId {
+    graph: 0x0007, // FIBO Foundations
+    version: 1,
+};
+
+/// Cascade edge-IRI whitelist for the Odoo surface — the RDF predicates the
+/// symbol-table follows during transitive resolution. Pulled from
+/// `lance_graph_ontology::hydrators::odoo::ODOO_EDGE_WHITELIST`.
+///
+/// Per the compiler-AST frame (PR #13): these ARE the **AST-edge types** the
+/// symbol-table walks. `rdfs:subClassOf` carries Odoo's facet subsumption
+/// (`odoo:res.partner.Company ⊑ odoo:res.partner`); `owl:equivalentClass`
+/// carries the Layer-2 alignment pivots that route into FIBO / schema.org /
+/// QUDT slots (the [`ODOO_SEED`] rows). The property variants
+/// (`rdfs:subPropertyOf` / `owl:equivalentProperty`) cover field-level
+/// alignments (`odoo:res.partner.name owl:equivalentProperty foaf:name`, etc.).
+///
+/// The first two are LOAD-BEARING — removing either breaks the symbol-table
+/// (the `pivot_namespace_and_family_are_consistent` pin assumes
+/// `owl:equivalentClass` resolves).
+pub const ODOO_EDGE_WHITELIST: &[&str] = &[
+    // Odoo facet subsumption (load-bearing — REQUIRED for the cascade)
+    "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+    // Layer-2 alignment pivots into FIBO/schema/QUDT (load-bearing — REQUIRED)
+    "http://www.w3.org/2002/07/owl#equivalentClass",
+    // Field-level alignments
+    "http://www.w3.org/2000/01/rdf-schema#subPropertyOf",
+    "http://www.w3.org/2002/07/owl#equivalentProperty",
+];
+
+/// The shipped TTL files this crate's alignment derives from. Informational —
+/// odoo-rs ships the SPO ndjson form (under `data/*.spo.ndjson`), not these
+/// TTL files; the harvest pipeline that produces both runs upstream. These
+/// path tails are the lance-graph-ontology runtime's source.
+pub const ODOO_TTL_SOURCES: &[&str] = &[
+    "data/ontologies/odoo/odoo-core.ttl",
+    "data/ontologies/odoo/alignment/odoo-to-fibo.ttl",
+    "data/ontologies/odoo/alignment/odoo-to-skr.ttl",
+];
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Family bytes — restated from data/family_registry.ttl (Option B)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -142,57 +219,145 @@ pub struct OwlPivot {
 /// Classify an Odoo class onto its DOLCE upper marker from structural suffix
 /// rules. Independent of the [`ODOO_SEED`] table so unmapped-but-recognisable
 /// classes (e.g. `sale.order`) still get a marker the consumer can record.
+/// Accepts a bare model name (`"res.partner"`) or a prefixed IRI
+/// (`"odoo:res.partner"`).
 ///
-/// - **Perdurant** — transactional events / processes: `*.move`,
-///   `*.move.line`, `*.payment`, `*.order`, `*.order.line`, bank statements,
-///   stock moves, pickings.
-/// - **Abstract** — rules / classifications / models: `*.tax`,
-///   `*.fiscal.position`, `*.reconcile.model`, `*.payment.term`,
-///   `*.pricelist`, `*.pricelist.item` (pricing rules, not persistent goods).
-/// - **Quality** — dimensions of comparison: `uom.*`.
-/// - **Endurant** — persistent master-data: `res.*`, `*.account`, `product.*`
-///   (the Abstract rules above match FIRST, so `product.pricelist` is
-///   correctly Abstract rather than swept into Endurant by `product.*`).
-/// - **Unknown** — no rule matched.
+/// Resolution order (first match wins):
 ///
-/// # Classifier completeness (finding from cross-validation)
+/// 1. **Endurant special-cases** — `product.template` and `account.account.template`
+///    are *master data*, NOT abstract config templates (odoo's `.template` here means
+///    "the master record"). Must be checked before the `.template` Abstract rule.
+/// 2. **Perdurant** — transactional events / processes: `*.move.line`, `*.move`,
+///    `*.payment`, `*.order.line`, `*.order`, `*.message`, `*.activity`,
+///    `*.attendance`, `*.transition`, `*.event`, `*.log`, `*.history`,
+///    `*.transaction`, `*.picking`, `*.scrap`, `bank.statement`, `stock.move`.
+/// 3. **Abstract** — rules / classifications / templates: `*.tax`,
+///    `*.fiscal.position`, `*.reconcile.model`, `*.payment.term`,
+///    `*.pricelist.item`, `*.pricelist`, `*.template`, `*.config`, `*.policy`,
+///    `*.rule`, `*.formula`.
+/// 4. **Quality** — dimensions / classifications / rates: `uom.*`, `*.tag`,
+///    `*.type`, `*.group`, `*.category`.
+/// 5. **Endurant** — persistent master-data fallback: `res.*`, `*.account`,
+///    `product.*`.
+/// 6. **Unknown** — no rule matched (deliberately NOT a default-to-Endurant
+///    rule, contra `lance_graph_ontology::hydrators::dolce_odoo::classify_odoo`
+///    which defaults to Endurant; see § "Two-classifier disagreement" below).
 ///
-/// The original `lance_graph_callcenter::odoo_alignment::dolce_odoo` lacked
-/// the `pricelist` exception. The seed table declared `product.pricelist` as
-/// `Abstract` (correctly: it's a pricing rule, not a persistent product), but
-/// the classifier returned `Endurant` because `product.*` matched first.
-/// Surfaced by the cross-validation test `every_seed_rows_dolce_matches_its
-/// _classifier_assignment` (Phase-2 alignment-pin, this crate).
+/// # Classifier provenance — two lance-graph classifiers merged here
+///
+/// lance-graph hosts **two** disagreeing DOLCE classifiers for Odoo:
+///
+/// - `lance_graph_callcenter::odoo_alignment::dolce_odoo` (pulled in PR #14)
+///   — fewer suffix rules, returns `Unknown` for unmatched.
+/// - `lance_graph_ontology::hydrators::dolce_odoo::classify_odoo` (pulled here)
+///   — richer suffix lists (3-way split into Perdurant / Quality / Abstract),
+///   defaults to `Endurant` for unmatched.
+///
+/// This implementation merges the **richer** suffix lists from the hydrator
+/// while keeping the alignment-side `Unknown` default and the alignment seed's
+/// disambiguation of `.tax` and the `.template` special-cases. See §
+/// "Two-classifier disagreement" for the explicit reconciliation table.
+///
+/// # Two-classifier disagreement (findings, deliberate reconciliations)
+///
+/// | Case | callcenter (PR #14) | ontology hydrator | This crate (reconciled) | Why |
+/// |---|---|---|---|---|
+/// | `.tax` | Abstract | Quality | **Abstract** | A tax IS a rule, not just a rate. Matches the [`ODOO_SEED`] (no row, but consistent with `payment.term` / `fiscal.position`). Phase-3 OGAR-side may revisit. |
+/// | `.tag` / `.type` / `.group` / `.category` | unmatched → Endurant via fallback | Quality | **Quality** | Classifications. The hydrator is correct: a category IS a way to classify, a Quality dimension. |
+/// | `.template` | unmatched → Endurant via product.* | Abstract (with `product.template` special-case) | **Abstract** with `product.template` AND `account.account.template` special-cases | Templates ARE configurations (Abstract) — except where Odoo uses "template" for master records (the two SKR-aligned exceptions). |
+/// | `hr.*` | Unknown | Endurant by default | **Unknown** | Deliberate: the seam table disagrees with the seed (`hr.job` / `hr.contract` are Abstract per the seed) and the hydrator (Endurant by default). Keeping Unknown surfaces the gap rather than picking one. |
+/// | Default | Unknown | Endurant | **Unknown** | Unknown signals "no rule matched" — the consumer can choose to default. Hiding this behind a fallback obscures the gap surface. |
+///
+/// The reconciliations are CONJECTURE-grade — Phase 3's universal Class-side
+/// push to OGAR is where the canonical resolution lands.
 #[must_use]
 #[allow(clippy::case_sensitive_file_extension_comparisons)] // Odoo class-name suffixes are not file extensions
 pub fn dolce_odoo(class: &str) -> DolceMarker {
-    if class.ends_with(".move")
-        || class.ends_with(".move.line")
-        || class.ends_with(".payment")
-        || class.ends_with(".order")
-        || class.ends_with(".order.line")
-        || class.ends_with("bank.statement")
-        || class.ends_with(".picking")
-        || class == "stock.move"
+    let model = strip_odoo_prefix(class);
+
+    // (1) Endurant special-cases — Odoo uses `.template` here for the master
+    //     record, NOT an abstract config template. Must check BEFORE the
+    //     `.template` Abstract rule below.
+    if model == "product.template" || model == "account.account.template" {
+        return DolceMarker::Endurant;
+    }
+
+    // (2) Perdurant — transactional events / processes.
+    if model.ends_with(".move.line")
+        || model.ends_with(".move")
+        || model.ends_with(".payment")
+        || model.ends_with(".order.line")
+        || model.ends_with(".order")
+        || model.ends_with(".message")
+        || model.ends_with(".activity")
+        || model.ends_with(".attendance")
+        || model.ends_with(".transition")
+        || model.ends_with(".event")
+        || model.ends_with(".log")
+        || model.ends_with(".history")
+        || model.ends_with(".transaction")
+        || model.ends_with(".picking")
+        || model.ends_with(".scrap")
+        || model.ends_with("bank.statement")
+        || model == "stock.move"
     {
         return DolceMarker::Perdurant;
     }
-    if class.ends_with(".tax")
-        || class.ends_with("fiscal.position")
-        || class.ends_with("reconcile.model")
-        || class.ends_with("payment.term")
-        || class.ends_with(".pricelist")
-        || class.ends_with(".pricelist.item")
+
+    // (3) Abstract — rules / policies / templates / classifications.
+    //     NOTE: `.settings` is the real catch for `*.config.settings` models
+    //     (the canonical Odoo settings shape, e.g. `sale.config.settings`).
+    //     The hydrator-side `.config` rule had a misleading comment claiming
+    //     to match `*.config.settings` but did not — `res.config.settings`
+    //     ends with `.settings`, not `.config`. Both are listed here so a
+    //     class ending in either lands as Abstract.
+    if model.ends_with(".tax")
+        || model.ends_with("fiscal.position")
+        || model.ends_with("reconcile.model")
+        || model.ends_with("payment.term")
+        || model.ends_with(".pricelist.item")
+        || model.ends_with(".pricelist")
+        || model.ends_with(".template")
+        || model.ends_with(".settings")
+        || model.ends_with(".config")
+        || model.ends_with(".policy")
+        || model.ends_with(".rule")
+        || model.ends_with(".formula")
     {
         return DolceMarker::Abstract;
     }
-    if class.starts_with("uom.") {
+
+    // (4) Quality — dimensions / classifications / rates.
+    //     NOTE: `.groups` (plural) is the real Odoo class shape — the
+    //     canonical `res.groups`. The hydrator-side `.group` rule had a
+    //     misleading comment claiming to match `res.groups` but did not.
+    //     Both singular and plural are listed.
+    if model.starts_with("uom.")
+        || model.ends_with(".tag")
+        || model.ends_with(".type")
+        || model.ends_with(".groups")
+        || model.ends_with(".group")
+        || model.ends_with(".category")
+    {
         return DolceMarker::Quality;
     }
-    if class.starts_with("res.") || class.ends_with(".account") || class.starts_with("product.") {
+
+    // (5) Endurant — persistent master-data fallback.
+    if model.starts_with("res.") || model.ends_with(".account") || model.starts_with("product.") {
         return DolceMarker::Endurant;
     }
+
     DolceMarker::Unknown
+}
+
+/// Strip a leading `odoo:` namespace prefix or the full odoo namespace IRI,
+/// returning the bare Odoo model name. Idempotent — bare names pass through.
+#[must_use]
+pub fn strip_odoo_prefix(iri: &str) -> &str {
+    if let Some(rest) = iri.strip_prefix("https://ada.world/onto/odoo#") {
+        return rest;
+    }
+    iri.strip_prefix("odoo:").unwrap_or(iri)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -15,9 +15,10 @@
 //! 5. The lookup surface — exact match + `product.*` prefix fallback.
 
 use od_ontology::{
-    dolce_odoo, parse_ndjson, resolve_odoo, DolceMarker, FAMILY_BILLING_CORE, FAMILY_HR_FOUNDATION,
-    FAMILY_PRODUCT_CATALOG, FAMILY_SMB_ACCOUNTING, FAMILY_SMB_FOUNDRY_CUSTOMER,
-    FAMILY_SMB_FOUNDRY_INVOICE, ODOO_SEED,
+    dolce_odoo, parse_ndjson, resolve_odoo, strip_odoo_prefix, DolceMarker, FAMILY_BILLING_CORE,
+    FAMILY_HR_FOUNDATION, FAMILY_PRODUCT_CATALOG, FAMILY_SMB_ACCOUNTING,
+    FAMILY_SMB_FOUNDRY_CUSTOMER, FAMILY_SMB_FOUNDRY_INVOICE, ODOO_BUNDLE_ID, ODOO_EDGE_WHITELIST,
+    ODOO_INHERITS_FROM_FIBOFND_V1, ODOO_NAMESPACE_IRI, ODOO_SEED, ODOO_TTL_SOURCES,
 };
 
 const SLICE_1: &str = include_str!("../../../data/account_move.spo.ndjson");
@@ -251,10 +252,172 @@ fn resolve_odoo_exact_match_returns_seed_row() {
 
 #[test]
 fn resolve_odoo_unseen_product_subtype_inherits_generic_slot() {
-    let p = resolve_odoo("product.category").expect("product.* prefix fallback");
+    // product.attribute hits the product.* prefix fallback. Classifier returns
+    // Endurant (default product.* rule after no Perdurant/Abstract/Quality
+    // match), so the pivot's DOLCE matches the master-record interpretation.
+    let p = resolve_odoo("product.attribute").expect("product.* prefix fallback");
     assert_eq!(p.pivot_uri, "schema:Product");
     assert_eq!(p.family, FAMILY_BILLING_CORE);
     assert_eq!(p.slot, 1); // product.template's slot
+    assert_eq!(p.dolce, DolceMarker::Endurant);
+}
+
+#[test]
+fn resolve_odoo_product_category_inherits_pivot_with_quality_dolce() {
+    // The richer classifier (PR #15) classifies `*.category` as Quality.
+    // `product.category` therefore resolves via `product.*` prefix fallback
+    // for the pivot+family+slot, but its DOLCE is Quality not Endurant —
+    // the marker correctly reflects that category is a classification, not
+    // a persistent product. (Phase-3 OGAR-side will decide whether the
+    // pivot itself should differ for Quality classes.)
+    let p = resolve_odoo("product.category").expect("product.* prefix fallback");
+    assert_eq!(p.pivot_uri, "schema:Product"); // inherited via product.template
+    assert_eq!(p.family, FAMILY_BILLING_CORE);
+    assert_eq!(p.dolce, DolceMarker::Quality);
+}
+
+// ── §7: richer dolce_odoo classifier (PR #15 — pulled from hydrators) ──────
+
+#[test]
+fn dolce_classifier_handles_prefixed_iris() {
+    // Bare model + odoo: prefix + full namespace IRI all resolve to the same
+    // category. Pulled from `lance_graph_ontology::hydrators::dolce_odoo`.
+    assert_eq!(dolce_odoo("res.partner"), DolceMarker::Endurant);
+    assert_eq!(dolce_odoo("odoo:res.partner"), DolceMarker::Endurant);
+    assert_eq!(
+        dolce_odoo("https://ada.world/onto/odoo#res.partner"),
+        DolceMarker::Endurant
+    );
+}
+
+#[test]
+fn strip_odoo_prefix_handles_all_three_forms() {
+    assert_eq!(strip_odoo_prefix("res.partner"), "res.partner");
+    assert_eq!(strip_odoo_prefix("odoo:res.partner"), "res.partner");
+    assert_eq!(
+        strip_odoo_prefix("https://ada.world/onto/odoo#account.move"),
+        "account.move"
+    );
+}
+
+#[test]
+fn dolce_classifier_new_perdurant_suffix_rules() {
+    // Pulled from `hydrators::dolce_odoo::PERDURANT_SUFFIXES`.
+    assert_eq!(dolce_odoo("mail.message"), DolceMarker::Perdurant);
+    assert_eq!(dolce_odoo("mail.activity"), DolceMarker::Perdurant);
+    assert_eq!(dolce_odoo("hr.attendance"), DolceMarker::Perdurant);
+    assert_eq!(dolce_odoo("calendar.event"), DolceMarker::Perdurant);
+    assert_eq!(dolce_odoo("audit.log"), DolceMarker::Perdurant);
+    assert_eq!(dolce_odoo("payment.transaction"), DolceMarker::Perdurant);
+    assert_eq!(dolce_odoo("stock.scrap"), DolceMarker::Perdurant);
+}
+
+#[test]
+fn dolce_classifier_new_quality_suffix_rules() {
+    // Pulled from `hydrators::dolce_odoo::QUALITY_SUFFIXES` (minus `.tax`,
+    // which we keep as Abstract — see § "Two-classifier disagreement" in
+    // `alignment.rs`).
+    assert_eq!(dolce_odoo("crm.tag"), DolceMarker::Quality);
+    assert_eq!(dolce_odoo("account.account.type"), DolceMarker::Quality);
+    assert_eq!(dolce_odoo("res.groups"), DolceMarker::Quality);
+    assert_eq!(dolce_odoo("product.category"), DolceMarker::Quality);
+}
+
+#[test]
+fn dolce_classifier_new_abstract_suffix_rules() {
+    // Pulled from `hydrators::dolce_odoo::ABSTRACT_SUFFIXES`.
+    assert_eq!(dolce_odoo("mail.template"), DolceMarker::Abstract);
+    assert_eq!(dolce_odoo("res.config.settings"), DolceMarker::Abstract);
+    // .policy / .rule / .formula are pulled but not test-exercised by any
+    // shipped model name in the slice corpora; the suffix rule is present so
+    // any future Odoo class ending in `.policy` lands correctly.
+}
+
+#[test]
+fn dolce_classifier_keeps_endurant_special_cases() {
+    // `product.template` and `account.account.template` are master records,
+    // NOT abstract config templates. Must NOT be swept into Abstract by
+    // the `.template` suffix rule.
+    assert_eq!(dolce_odoo("product.template"), DolceMarker::Endurant);
+    assert_eq!(
+        dolce_odoo("account.account.template"),
+        DolceMarker::Endurant
+    );
+}
+
+#[test]
+fn dolce_classifier_documented_disagreement_tax_stays_abstract() {
+    // Disagreement with `lance_graph_ontology::hydrators::dolce_odoo` (which
+    // classifies `.tax` as Quality). This crate keeps `.tax` → Abstract
+    // (matches `lance_graph_callcenter::odoo_alignment` PR #14 pull).
+    // Phase-3 OGAR-side will canonically resolve.
+    assert_eq!(dolce_odoo("account.tax"), DolceMarker::Abstract);
+}
+
+// ── §8: namespace identity + cascade edge whitelist ────────────────────────
+
+#[test]
+fn namespace_iri_matches_lance_graph_hydrator() {
+    assert_eq!(ODOO_NAMESPACE_IRI, "https://ada.world/onto/odoo#");
+}
+
+#[test]
+fn odoo_bundle_inherits_from_fibo_foundations() {
+    // The literal "Odoo inheriting classes" namespace declaration: Odoo
+    // (bundle 0x0002) inherits from FIBO Foundations (bundle 0x0007). The
+    // per-class equivalentClass rows in ODOO_SEED are the instances of this
+    // inheritance; these constants are the declaration.
+    assert_eq!(ODOO_BUNDLE_ID.graph, 0x0002);
+    assert_eq!(ODOO_BUNDLE_ID.version, 1);
+    assert_eq!(ODOO_INHERITS_FROM_FIBOFND_V1.graph, 0x0007);
+    assert_eq!(ODOO_INHERITS_FROM_FIBOFND_V1.version, 1);
+}
+
+#[test]
+fn cascade_edge_whitelist_has_the_two_load_bearing_iris() {
+    // Per the compiler-AST frame: these are the AST-edge types the symbol
+    // table follows. `rdfs:subClassOf` (facet subsumption) and
+    // `owl:equivalentClass` (Layer-2 alignment pivots into FIBO/schema/QUDT)
+    // are LOAD-BEARING — removing either breaks the cascade.
+    assert!(
+        ODOO_EDGE_WHITELIST.contains(&"http://www.w3.org/2000/01/rdf-schema#subClassOf"),
+        "rdfs:subClassOf is load-bearing"
+    );
+    assert!(
+        ODOO_EDGE_WHITELIST.contains(&"http://www.w3.org/2002/07/owl#equivalentClass"),
+        "owl:equivalentClass is load-bearing"
+    );
+}
+
+#[test]
+fn cascade_edge_whitelist_covers_property_alignments_too() {
+    // Field-level alignments (e.g. `odoo:res.partner.name owl:equivalentProperty
+    // foaf:name`) require the property variants of the two load-bearing edges.
+    assert!(
+        ODOO_EDGE_WHITELIST.contains(&"http://www.w3.org/2000/01/rdf-schema#subPropertyOf"),
+        "rdfs:subPropertyOf carries field-level subsumption"
+    );
+    assert!(
+        ODOO_EDGE_WHITELIST.contains(&"http://www.w3.org/2002/07/owl#equivalentProperty"),
+        "owl:equivalentProperty carries field-level alignments"
+    );
+}
+
+#[test]
+fn ttl_sources_list_the_three_documented_files() {
+    // Mirrors `lance_graph_ontology::hydrators::odoo::ODOO_CORE_RELATIVE_PATH`
+    // + `ODOO_ALIGNMENT_RELATIVE_PATHS`. odoo-rs ships the SPO ndjson form,
+    // not these TTL files — they're documented here so the consumer knows
+    // what the harvest pipeline reads upstream.
+    assert!(ODOO_TTL_SOURCES.contains(&"data/ontologies/odoo/odoo-core.ttl"));
+    assert!(
+        ODOO_TTL_SOURCES.contains(&"data/ontologies/odoo/alignment/odoo-to-fibo.ttl"),
+        "odoo-to-fibo TTL is the Layer-2 alignment overlay"
+    );
+    assert!(
+        ODOO_TTL_SOURCES.contains(&"data/ontologies/odoo/alignment/odoo-to-skr.ttl"),
+        "odoo-to-skr TTL carries SKR03/04 chart-of-accounts alignment"
+    );
 }
 
 #[test]
