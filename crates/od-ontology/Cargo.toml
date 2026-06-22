@@ -48,6 +48,14 @@ name = "od-codegen"
 path = "src/bin/od_codegen.rs"
 required-features = ["cli"]
 
+# End-to-end "pull OGAR via class" demo. Uses the `ogar-emit`-gated classid
+# surface (concept_classid / render_classid / schema_classids /
+# emit_via_ogar_annotated), so it only builds under the feature — otherwise a
+# default `cargo build --examples` would fail on the gated symbols.
+[[example]]
+name = "classid_pull"
+required-features = ["ogar-emit"]
+
 [lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = "warn"
