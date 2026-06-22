@@ -77,9 +77,11 @@ pub use ogar_actions::{corpus_action_rows, corpus_to_actions};
 pub use ogar_vocab::class_ids;
 
 pub use alignment::{
-    dolce_odoo, resolve_odoo, DolceMarker, OdooFamily, OdooSeedRow, OwlPivot, FAMILY_BILLING_CORE,
-    FAMILY_HR_FOUNDATION, FAMILY_PRODUCT_CATALOG, FAMILY_SMB_ACCOUNTING,
-    FAMILY_SMB_FOUNDRY_CUSTOMER, FAMILY_SMB_FOUNDRY_INVOICE, ODOO_SEED,
+    dolce_odoo, resolve_odoo, strip_odoo_prefix, DolceMarker, OdooFamily, OdooSeedRow,
+    OntologyBundleId, OwlPivot, FAMILY_BILLING_CORE, FAMILY_HR_FOUNDATION, FAMILY_PRODUCT_CATALOG,
+    FAMILY_SMB_ACCOUNTING, FAMILY_SMB_FOUNDRY_CUSTOMER, FAMILY_SMB_FOUNDRY_INVOICE, ODOO_BUNDLE_ID,
+    ODOO_EDGE_WHITELIST, ODOO_INHERITS_FROM_FIBOFND_V1, ODOO_NAMESPACE_IRI, ODOO_SEED,
+    ODOO_TTL_SOURCES,
 };
 pub use emit::corpus_to_schema;
 pub use inheritance::InheritanceMap;
