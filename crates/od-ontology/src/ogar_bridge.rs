@@ -68,6 +68,35 @@ pub fn emit_via_ogar(schema: &Schema) -> String {
     ogar_adapter_surrealql::emit_surrealql_ddl(&schema_to_classes(schema))
 }
 
+/// [`emit_via_ogar`] DDL, prefixed with a `SurrealQL` comment header that
+/// stamps each table's canonical OGAR render classid (`0xAABBCCDD`, the
+/// full APP‖class id from [`render_classid`]). Tables outside the codebook
+/// are listed as `(uncodified)` so the header is a complete table census,
+/// not a silent subset. The header is pure `SurrealQL` line-comments (`--`),
+/// so the output is still valid DDL — the classids ride alongside, making
+/// the emitted schema self-describing about which shared concept each
+/// table denotes.
+#[must_use]
+pub fn emit_via_ogar_annotated(schema: &Schema) -> String {
+    use std::fmt::Write as _;
+    let mut header = String::from("-- OGAR canonical classids (APP 0x0002 = Odoo render lens)\n");
+    for table in &schema.tables {
+        match render_classid(&table.name) {
+            // `writeln!` into a String is infallible; the `let _` discards the
+            // `fmt::Result` without an `unwrap` (clippy `format_push_string`).
+            Some(id) => {
+                let _ = writeln!(header, "-- classid {} = 0x{id:08X}", table.name);
+            }
+            None => {
+                let _ = writeln!(header, "-- classid {} = (uncodified)", table.name);
+            }
+        }
+    }
+    header.push('\n');
+    header.push_str(&emit_via_ogar(schema));
+    header
+}
+
 // ── Canonical classid pull (the "pull OGAR via class" deliverable) ──────
 //
 // `schema_to_classes` above lowers *structure* (tables → `Class` shells with
@@ -107,6 +136,16 @@ pub const ODOO_APP_PREFIX: u16 = 0x0002;
 /// `account_move` → `0x0202` (`COMMERCIAL_DOCUMENT`), `account_analytic_line` →
 /// `0x0103` (`BILLABLE_WORK_ENTRY`, the cross-arm bridge), `res_partner` →
 /// `0x0204` (`BILLING_PARTY`).
+///
+/// **Scope caveat — `_`→`.` is not a universal bijection.** The normalize is
+/// lossless for all nine codebook aliases: each alias consists of dot-separated
+/// single-word segments (no underscore inside a segment), so
+/// `account_analytic_line` → `account.analytic.line` is an exact round-trip.
+/// Odoo localization and multi-word module classes that carry an underscore
+/// *inside* a segment (e.g. `l10n_es_edi_document`, `im_livechat_channel`) are
+/// intentionally out of codebook scope and resolve to `None` — a fail-safe miss,
+/// never a wrong id. Callers that need to map such names should maintain their
+/// own alias table rather than extending the `_`→`.` heuristic.
 #[must_use]
 pub fn concept_classid(model: &str) -> Option<u16> {
     OdooPort::class_id(&model.replace('_', ".")).or_else(|| OdooPort::class_id(model))
@@ -352,6 +391,55 @@ mod tests {
                 ("account_analytic_line".to_string(), Some(0x0103)),
                 ("ir_cron".to_string(), None),
             ]
+        );
+    }
+
+    // ── emit_via_ogar_annotated ─────────────────────────────────────────
+
+    #[test]
+    fn emit_via_ogar_annotated_stamps_classid_header() {
+        let schema = Schema {
+            tables: vec![
+                TableDefinition::new("account_move"),
+                TableDefinition::new("ir_cron"),
+            ],
+            functions: Vec::new(),
+            events: Vec::new(),
+        };
+        let out = emit_via_ogar_annotated(&schema);
+        // Codebook hit: account_move render classid = 0x0002_0202
+        assert!(
+            out.contains("-- classid account_move = 0x00020202"),
+            "expected render-classid stamp for account_move; got:\n{out}"
+        );
+        // Codebook miss: ir_cron is not in OdooPort aliases
+        assert!(
+            out.contains("-- classid ir_cron = (uncodified)"),
+            "expected (uncodified) for ir_cron; got:\n{out}"
+        );
+        // DDL body still follows the header
+        assert!(
+            out.contains("DEFINE TABLE"),
+            "expected DDL body after header; got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn emit_via_ogar_annotated_is_valid_ddl_prefix() {
+        let schema = Schema {
+            tables: vec![
+                TableDefinition::new("account_move"),
+                TableDefinition::new("ir_cron"),
+            ],
+            functions: Vec::new(),
+            events: Vec::new(),
+        };
+        // The annotation is purely additive: the native emit is a suffix.
+        let native = emit_via_ogar(&schema);
+        let annotated = emit_via_ogar_annotated(&schema);
+        assert!(
+            annotated.contains(&native),
+            "emit_via_ogar output must appear as-is inside emit_via_ogar_annotated output"
         );
     }
 }

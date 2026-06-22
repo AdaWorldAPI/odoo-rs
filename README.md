@@ -151,6 +151,51 @@ honest *convention* fallback (`record<invoice_line>`); the parallel
 `slice_2_typed_lift.rs` proves the *lift* resolves it to `account_move_line`.
 Both stay in the test set — the diff between them is the value the bridge adds.
 
+## Pulling the canonical classid (OGAR)
+
+Under the `ogar-emit` feature, `od-ontology` pulls the canonical OGAR classid
+for each Odoo model straight from `ogar_vocab::ports::OdooPort` — no bridge
+object, no registry, no TTL hydration. A pure static lookup over the shared
+codebook (OGAR #94). This is the "pull OGAR via class" consumer-migration target
+(lance-graph #589).
+
+### API
+
+```rust
+// feature = "ogar-emit"
+concept_classid("account_move")          // Some(0x0202)  COMMERCIAL_DOCUMENT
+concept_classid("account_analytic_line") // Some(0x0103)  BILLABLE_WORK_ENTRY
+render_classid("account_move")           // Some(0x0002_0202)  APP 0x0002 (Odoo lens) ‖ concept
+schema_classids(&schema)                 // Vec<(table, Option<u16>)>
+```
+
+### APP‖class codebook
+
+The `classid` is a 32-bit value: `APP (high u16) ‖ concept (low u16)`. The **low
+u16** is WHAT it is — the shared cross-app concept (RBAC + ontology). The **high
+u16** is WHOSE render — the per-app lens; Odoo's is `0x0002`.
+
+### Convergence pin
+
+Planning times align with billable hours through one codebook lookup:
+
+| Surface | Model / entity | Concept classid |
+|---|---|---|
+| Odoo (ERP) | `account.analytic.line` | `0x0103` `BILLABLE_WORK_ENTRY` |
+| WoA / SMB | `Stundenzettel` | `0x0103` `BILLABLE_WORK_ENTRY` |
+| OpenProject / Redmine | `TimeEntry` | `0x0103` `BILLABLE_WORK_ENTRY` |
+
+### Name-form caveat
+
+The SPO corpus names models in table form (`account_move`); `OdooPort` aliases
+are model form (`account.move`); the bridge normalizes `_`→`.` (the canonical
+Odoo `_name.replace('.', '_')` inverted). This is lossless for the codebook's
+dot-separated single-word segments; Odoo localization and module classes with an
+underscore inside a segment (`l10n_*`, `im_livechat_*`) are intentionally out of
+scope and resolve to `None` — a fail-safe miss, never a wrong id.
+
+---
+
 ## The cut tail (deferred)
 
 A **codegen / migration convenience layer** — export the typed AST, snapshot it
