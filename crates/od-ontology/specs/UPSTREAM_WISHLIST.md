@@ -429,6 +429,27 @@ we can adopt your choice when it lands.
 > Concrete pass/fail successor to open-question #2 above. Decoupled from the
 > hex-id stamp, which already shipped — see below.
 
+> **✓ REVERSE MAP + NAME-IN-COMMENT SHIPPED 2026-06-22.** OGAR #98 landed
+> `canonical_concept_name(u16) -> Option<&'static str>` (round-trip-verified
+> over all 39 CODEBOOK entries). `emit_via_ogar_annotated` now consumes it:
+> the COMMENT carries the readable concept name + classid —
+> `COMMENT 'commercial_document (classid:0x00020202)'` — via
+> `ogar_vocab::canonical_concept_name`, never re-derived locally. The APP
+> prefix + `(prefix<<16)|concept` composition likewise route through OGAR #97
+> (`OdooPort::APP_PREFIX`, `app::render_classid_for`). **Still follow-on:** the
+> `Class.canonical_concept`-on-shells fusion that collapses `schema_classids`
+> into a derived view over `Class::canonical_id()` — R4 graded that
+> WORTH-EXPLORING (it changes the shared lowering path), and it carries the
+> `sale.order` lexical-vs-alias asymmetry as its own guard. Not blocking; the
+> shipped readable COMMENT already delivers the operator-facing value.
+>
+> **#99 reframing (SurrealQL-AST-trap governance):** W3.3 ("delete the
+> `surreal_ast`/`triple`/`recompute_dag` fork") is NOT "grow the canonical
+> adapter to emit `DEFINE EVENT`" — that would re-enter the trap (SurrealQL AST
+> carrying lifecycle). The fork's reactive layer must move to OGAR
+> `Class + ActionDef`; the adapter emits identity/structure DDL only. This
+> probe's COMMENT work is identity-layer and stays clear of that boundary.
+
 **Already shipped, no capability needed:** `emit_via_ogar_annotated`
 (`ogar_bridge.rs`) stamps the full APP‖class render id into the
 `DEFINE TABLE … COMMENT 'classid:0x00020202'` clause, so the id rides into
