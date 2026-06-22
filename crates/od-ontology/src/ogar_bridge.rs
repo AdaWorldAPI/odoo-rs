@@ -46,8 +46,9 @@
 //! - **`DEFINE INDEX`** (`_sql_constraints` unique tuples): not part of the
 //!   OGAR IR; dropped.
 
+use ogar_vocab::app::render_classid_for;
 use ogar_vocab::ports::{OdooPort, PortSpec};
-use ogar_vocab::{Association, AssociationKind, Attribute, Class};
+use ogar_vocab::{canonical_concept_name, Association, AssociationKind, Attribute, Class};
 
 use crate::surreal_ast::{FieldDefinition, Kind, Schema, TableDefinition};
 
@@ -68,18 +69,20 @@ pub fn emit_via_ogar(schema: &Schema) -> String {
     ogar_adapter_surrealql::emit_surrealql_ddl(&schema_to_classes(schema))
 }
 
-/// [`emit_via_ogar`] DDL, but with each codebook table's canonical OGAR render
-/// classid stamped into its `DEFINE TABLE … COMMENT 'classid:0xAABBCCDD'` clause
-/// — so the id rides into `SurrealDB`'s own catalog metadata (queryable via
-/// `INFO FOR TABLE`), not just the emitted `.surql` text. A `--` line-comment
-/// would evaporate at parse time; the `COMMENT` clause survives ingestion.
+/// [`emit_via_ogar`] DDL, with each codebook table's canonical OGAR concept
+/// **name** + full render classid stamped into its `DEFINE TABLE …
+/// COMMENT 'commercial_document (classid:0x00020202)'` clause — so the shared
+/// concept rides into `SurrealDB`'s own catalog metadata (queryable via
+/// `INFO FOR TABLE`), human-readable, not just the emitted `.surql` text. A
+/// `--` line-comment would evaporate at parse time; the `COMMENT` clause
+/// survives ingestion.
 ///
 /// Purely additive over [`schema_to_classes`]: a table outside the codebook
 /// gets no classid comment (its structural DDL is byte-identical to the native
-/// [`emit_via_ogar`]). Only the full APP‖class render id (the hex) is stamped
-/// today — the human-readable concept *name* awaits an OGAR-side
-/// `id → concept-name` reverse lookup (see `specs/UPSTREAM_WISHLIST.md`,
-/// `PROBE-OGAR-ID-TO-CONCEPT-NAME`).
+/// [`emit_via_ogar`]). The concept name comes from
+/// [`ogar_vocab::canonical_concept_name`] — OGAR's `id → name` reverse map
+/// (the `PROBE-OGAR-ID-TO-CONCEPT-NAME` capability, OGAR #98) — never
+/// re-derived or copied locally, per the Core-First doctrine.
 #[must_use]
 pub fn emit_via_ogar_annotated(schema: &Schema) -> String {
     let classes: Vec<Class> = schema
@@ -87,11 +90,18 @@ pub fn emit_via_ogar_annotated(schema: &Schema) -> String {
         .iter()
         .map(|table| {
             let mut class = table_to_class(table);
-            // Identity stamp: the render classid rides into the catalog COMMENT
-            // (the emitter renders `class.description` as `… COMMENT '<desc>'`).
-            // Uncodified tables keep `description = None` → no classid clause.
-            if let Some(id) = render_classid(&table.name) {
-                class.description = Some(format!("classid:0x{id:08X}"));
+            // Identity stamp: the canonical concept name + full render classid
+            // ride into the catalog COMMENT (the emitter renders
+            // `class.description` as `… COMMENT '<desc>'`). Uncodified tables
+            // keep `description = None` → no classid clause.
+            if let Some(lo) = concept_classid(&table.name) {
+                let render = render_classid_for::<OdooPort>(lo);
+                class.description = Some(match canonical_concept_name(lo) {
+                    Some(name) => format!("{name} (classid:0x{render:08X})"),
+                    // `lo` came from the codebook, so the reverse lookup is
+                    // total — the bare-hex arm is a defensive fallback only.
+                    None => format!("classid:0x{render:08X}"),
+                });
             }
             class
         })
@@ -117,7 +127,12 @@ pub fn emit_via_ogar_annotated(schema: &Schema) -> String {
 /// `u16` is the shared cross-app concept (WHAT it is — RBAC + ontology); the
 /// high `u16` is the per-app render lens (WHOSE template). `0x0002` is Odoo's
 /// lens, so every Odoo-rendered id is `0x0002_<concept>`.
-pub const ODOO_APP_PREFIX: u16 = 0x0002;
+///
+/// **Bound to the Core** (OGAR #97): this is [`OdooPort::APP_PREFIX`], not a
+/// local literal — the prefix allocation lives once, in OGAR's `PortSpec`. If
+/// OGAR ever re-allocates Odoo's prefix this follows automatically; there is
+/// no second copy to drift.
+pub const ODOO_APP_PREFIX: u16 = OdooPort::APP_PREFIX;
 
 /// Pull the canonical OGAR **concept** classid (the shared low `u16`) for an
 /// Odoo model name, straight through [`OdooPort`] — the static alias table, no
@@ -154,12 +169,16 @@ pub fn concept_classid(model: &str) -> Option<u16> {
 }
 
 /// The full 32-bit **render** classid for an Odoo model: Odoo's APP prefix
-/// ([`ODOO_APP_PREFIX`], `0x0002`) in the high `u16`, the shared canonical
-/// [`concept_classid`] in the low `u16`. `account_move` → `0x0002_0202`;
-/// `account_analytic_line` → `0x0002_0103`. `None` for an unaliased model.
+/// (`0x0002`) in the high `u16`, the shared canonical [`concept_classid`] in
+/// the low `u16`. `account_move` → `0x0002_0202`; `account_analytic_line` →
+/// `0x0002_0103`. `None` for an unaliased model.
+///
+/// Composition is OGAR's canonical [`render_classid_for`] (OGAR #97), not a
+/// hand-rolled shift — the `(prefix << 16) | concept` layout lives in one
+/// place (the Core), never re-implemented per consumer.
 #[must_use]
 pub fn render_classid(model: &str) -> Option<u32> {
-    concept_classid(model).map(|lo| (u32::from(ODOO_APP_PREFIX) << 16) | u32::from(lo))
+    concept_classid(model).map(render_classid_for::<OdooPort>)
 }
 
 /// Resolve every table in `schema` to its canonical OGAR concept classid,
@@ -409,12 +428,13 @@ mod tests {
             events: Vec::new(),
         };
         let ddl = emit_via_ogar_annotated(&schema);
-        // Codebook hit: account_move render classid 0x0002_0202 rides into the
-        // catalog COMMENT (single-quoted SurrealQL string literal), so it
-        // survives SurrealDB ingestion rather than evaporating as a `--` line.
+        // Codebook hit: account_move carries the canonical concept NAME +
+        // render classid 0x0002_0202 in a catalog COMMENT (single-quoted
+        // SurrealQL literal), so it survives SurrealDB ingestion rather than
+        // evaporating as a `--` line. The name comes from OGAR's reverse map.
         assert!(
-            ddl.contains("COMMENT 'classid:0x00020202'"),
-            "account_move must carry its render classid in a COMMENT clause; got:\n{ddl}"
+            ddl.contains("COMMENT 'commercial_document (classid:0x00020202)'"),
+            "account_move must carry its concept name + classid in a COMMENT clause; got:\n{ddl}"
         );
         // Codebook miss: ir_cron stays unstamped — exactly one classid clause.
         assert_eq!(

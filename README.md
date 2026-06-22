@@ -169,6 +169,27 @@ render_classid("account_move")           // Some(0x0002_0202)  APP 0x0002 (Odoo 
 schema_classids(&schema)                 // Vec<(table, Option<u16>)>
 ```
 
+The APP prefix (`OdooPort::APP_PREFIX`, OGAR #97) and the `(prefix << 16) |
+concept` composition (`ogar_vocab::app::render_classid_for`) come from the Core
+— never a local literal or a hand-rolled shift.
+
+### Annotated DDL — classid in the catalog
+
+`emit_via_ogar_annotated(&schema)` lowers each table onto `ogar_vocab::Class`
+and emits via the canonical `ogar-adapter-surrealql`, stamping each codebook
+table's **concept name + classid** into the `DEFINE TABLE … COMMENT` clause —
+so it rides into SurrealDB's own catalog (queryable via `INFO FOR TABLE`),
+human-readable, not just the `.surql` text:
+
+```surql
+DEFINE TABLE account_move SCHEMAFULL COMMENT 'commercial_document (classid:0x00020202)';
+```
+
+The concept name comes from `ogar_vocab::canonical_concept_name` (OGAR #98's
+`id → name` reverse map), never re-derived locally. The COMMENT carries
+**identity only** — never lifecycle/behavior (per OGAR's SurrealQL-AST-trap
+governance, #99: SurrealQL is an adapter, not a spine).
+
 ### APP‖class codebook
 
 The `classid` is a 32-bit value: `APP (high u16) ‖ concept (low u16)`. The **low
