@@ -443,12 +443,18 @@ we can adopt your choice when it lands.
 > `sale.order` lexical-vs-alias asymmetry as its own guard. Not blocking; the
 > shipped readable COMMENT already delivers the operator-facing value.
 >
-> **#99 reframing (SurrealQL-AST-trap governance):** W3.3 ("delete the
-> `surreal_ast`/`triple`/`recompute_dag` fork") is NOT "grow the canonical
-> adapter to emit `DEFINE EVENT`" — that would re-enter the trap (SurrealQL AST
-> carrying lifecycle). The fork's reactive layer must move to OGAR
-> `Class + ActionDef`; the adapter emits identity/structure DDL only. This
-> probe's COMMENT work is identity-layer and stays clear of that boundary.
+> **#99 reframing (SurrealQL-AST-trap governance).** W3.3 ("delete the
+> `surreal_ast`/`triple`/`recompute_dag` fork") is **two separable lowerings**,
+> not one deletion: (a) structural shape → `ogar_vocab::Class` (DDL stays a
+> lossy egress adapter); (b) behavioral lifecycle → OGAR's behavioral arm
+> (`ActionDef`/`ActionInvocation`/`KausalSpec`/Rubicon FSM), **not** a
+> `DEFINE EVENT` emit (which re-enters the trap). The fork deletes only after
+> both; (b) is gated on OGAR's behavioral vocabulary being consumable here (NOT
+> verified wired). This probe's COMMENT work is identity-layer (a slice of the
+> structural arm) and stays clear of that boundary. **Full spellbook — the
+> two-arm frame, one-way-lossy roundtrip, Q1–Q5 mirror, activation triggers:
+> `specs/SURREAL-AST-TRAP.md`** (the od-ontology-local mirror of OGAR #99).
+> Read it before any W3 fork-deletion work.
 
 **Already shipped, no capability needed:** `emit_via_ogar_annotated`
 (`ogar_bridge.rs`) stamps the full APP‖class render id into the
