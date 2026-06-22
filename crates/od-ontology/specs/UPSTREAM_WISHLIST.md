@@ -423,6 +423,40 @@ we can adopt your choice when it lands.
    schema-emit consumer. Does ClassView's design cleanly generalize, or
    is it tesseract-shaped (single-language-target by construction)?
 
+## PROBE-OGAR-ID-TO-CONCEPT-NAME (P2 · gates the classid→COMMENT name enrichment)
+
+> Filed 2026-06-22 (classid-consume sprint, convergence-architect review R4).
+> Concrete pass/fail successor to open-question #2 above. Decoupled from the
+> hex-id stamp, which already shipped — see below.
+
+**Already shipped, no capability needed:** `emit_via_ogar_annotated`
+(`ogar_bridge.rs`) stamps the full APP‖class render id into the
+`DEFINE TABLE … COMMENT 'classid:0x00020202'` clause, so the id rides into
+SurrealDB's own catalog (queryable via `INFO FOR TABLE`). This needs only the
+forward `OdooPort::class_id` (name → id) we already consume.
+
+**The gap this probe captures:** to put the human-readable concept *name*
+(`COMMERCIAL_DOCUMENT`) in that COMMENT — and to collapse `schema_classids`
+into a derived view over `Class::canonical_id()` by populating
+`Class.canonical_concept` at lowering time — odoo-rs needs a **reverse**
+`u16 → &'static str` lookup that `OdooPort`/`class_ids` do NOT expose today
+(`OdooPort::aliases()` is forward-only `&[(&str, u16)]`).
+
+- **Capability under test:** an OGAR-side `class_ids::name_of(0x0202) ==
+  Some("COMMERCIAL_DOCUMENT")` (or equivalent reverse index), derivable from
+  the existing `class_ids` const module / `CODEBOOK`.
+- **PASS:** `table_to_class` sets `class.canonical_concept` (+ a
+  `COMMERCIAL_DOCUMENT (classid:0x00020202)` COMMENT); `schema_classids`
+  becomes a one-liner over the populated shells (no second traversal); the
+  asymmetry guard holds — `sale.order` resolves to `COMMERCIAL_DOCUMENT`,
+  **not** lexical `order` (this is the regression that proves the fusion safe).
+- **FAIL / stay deferred:** OGAR exposes no reverse map → keep the forward-only
+  `concept_classid` surface and the hex-only COMMENT (the current shipped state).
+- **Decoupling note:** the hex-id COMMENT (shipped) has **no** dependency on
+  this probe; only the concept-*name* enrichment + the `canonical_concept`
+  fusion wait on it. They are the *same* gate (verified: both need the reverse
+  lookup), so one OGAR capability unblocks both.
+
 ## Current state of odoo-rs (so the design session knows what to design against)
 
 - `corpus_to_schema` projects SPO triples → typed `Schema { tables,
