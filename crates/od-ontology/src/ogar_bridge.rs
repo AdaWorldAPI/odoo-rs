@@ -46,6 +46,7 @@
 //! - **`DEFINE INDEX`** (`_sql_constraints` unique tuples): not part of the
 //!   OGAR IR; dropped.
 
+use ogar_vocab::ports::{OdooPort, PortSpec};
 use ogar_vocab::{Association, AssociationKind, Attribute, Class};
 
 use crate::surreal_ast::{FieldDefinition, Kind, Schema, TableDefinition};
@@ -65,6 +66,71 @@ pub fn schema_to_classes(schema: &Schema) -> Vec<Class> {
 #[must_use]
 pub fn emit_via_ogar(schema: &Schema) -> String {
     ogar_adapter_surrealql::emit_surrealql_ddl(&schema_to_classes(schema))
+}
+
+// ── Canonical classid pull (the "pull OGAR via class" deliverable) ──────
+//
+// `schema_to_classes` above lowers *structure* (tables → `Class` shells with
+// attributes + associations). The functions below lower *identity*: they pull
+// the canonical OGAR `classid` for an Odoo model straight from the [`OdooPort`]
+// alias table — NO bridge object, NO registry, NO TTL hydration, just a pure
+// static lookup over the shared codebook (OGAR #94). This is the consumer
+// migration target (lance-graph #589 / OGAR `CONSUMER-MIGRATION-HOWTO`): a
+// consumer names a surface concept and gets back the shared id that WoA
+// `Stundenzettel`, SMB `Stundenzettel`, OpenProject/Redmine `TimeEntry`, and
+// Odoo `account.analytic.line` all converge on (`BILLABLE_WORK_ENTRY`, the
+// planner↔ERP billable-hours pin).
+
+/// Odoo's APP-prefix — the high `u16` of the 32-bit *render* classid per OGAR's
+/// `APP-CLASS-CODEBOOK-LAYOUT` (`classid = APP(hi) ‖ concept(lo)`). The low
+/// `u16` is the shared cross-app concept (WHAT it is — RBAC + ontology); the
+/// high `u16` is the per-app render lens (WHOSE template). `0x0002` is Odoo's
+/// lens, so every Odoo-rendered id is `0x0002_<concept>`.
+pub const ODOO_APP_PREFIX: u16 = 0x0002;
+
+/// Pull the canonical OGAR **concept** classid (the shared low `u16`) for an
+/// Odoo model name, straight through [`OdooPort`] — the static alias table, no
+/// bridge object, no registry, no hydration.
+///
+/// The SPO corpus names models in Odoo's *table* form (`.` replaced by `_`:
+/// `account_move`, `account_analytic_line`); [`OdooPort`]'s aliases are the
+/// *model* form (`account.move`, `account.analytic.line`). Deriving the table
+/// name as `_name.replace('.', '_')` is the canonical Odoo convention, so the
+/// inverse `_`→`.` recovers the model name losslessly; a name already in model
+/// form (no `_`) passes through unchanged. The raw name is also tried as a
+/// fallback so a caller that already holds a dotted model name still resolves.
+///
+/// Returns `None` for a model outside the codebook (e.g. `ir_cron`); the
+/// structural lowering in [`schema_to_classes`] still covers such a table — only
+/// the canonical-identity pull is codebook-gated.
+///
+/// `account_move` → `0x0202` (`COMMERCIAL_DOCUMENT`), `account_analytic_line` →
+/// `0x0103` (`BILLABLE_WORK_ENTRY`, the cross-arm bridge), `res_partner` →
+/// `0x0204` (`BILLING_PARTY`).
+#[must_use]
+pub fn concept_classid(model: &str) -> Option<u16> {
+    OdooPort::class_id(&model.replace('_', ".")).or_else(|| OdooPort::class_id(model))
+}
+
+/// The full 32-bit **render** classid for an Odoo model: Odoo's APP prefix
+/// ([`ODOO_APP_PREFIX`], `0x0002`) in the high `u16`, the shared canonical
+/// [`concept_classid`] in the low `u16`. `account_move` → `0x0002_0202`;
+/// `account_analytic_line` → `0x0002_0103`. `None` for an unaliased model.
+#[must_use]
+pub fn render_classid(model: &str) -> Option<u32> {
+    concept_classid(model).map(|lo| (u32::from(ODOO_APP_PREFIX) << 16) | u32::from(lo))
+}
+
+/// Resolve every table in `schema` to its canonical OGAR concept classid,
+/// pairing the table name with its [`concept_classid`]. Tables outside the
+/// `OdooPort` codebook resolve to `None`. Order mirrors `schema.tables`.
+#[must_use]
+pub fn schema_classids(schema: &Schema) -> Vec<(String, Option<u16>)> {
+    schema
+        .tables
+        .iter()
+        .map(|t| (t.name.clone(), concept_classid(&t.name)))
+        .collect()
 }
 
 fn table_to_class(table: &TableDefinition) -> Class {
@@ -213,5 +279,79 @@ mod tests {
         let a = &c.associations[0];
         assert_eq!(a.kind, AssociationKind::HasMany);
         assert_eq!(a.class_name.as_deref(), Some("account_move_line"));
+    }
+
+    // ── Canonical classid pull ──────────────────────────────────────────
+
+    #[test]
+    fn concept_classid_pulls_commercial_document_for_account_move() {
+        // account_move (table form) → account.move (model form) →
+        // COMMERCIAL_DOCUMENT 0x0202, straight from the OdooPort alias table.
+        assert_eq!(concept_classid("account_move"), Some(0x0202));
+    }
+
+    #[test]
+    fn concept_classid_pulls_billable_work_entry_for_analytic_line() {
+        // The planner↔ERP convergence pin: account.analytic.line is the
+        // cross-arm bridge into the project domain. Same id WoA/SMB
+        // Stundenzettel + OpenProject/Redmine TimeEntry resolve to.
+        assert_eq!(concept_classid("account_analytic_line"), Some(0x0103));
+    }
+
+    #[test]
+    fn concept_classid_pulls_billing_party_for_res_partner() {
+        assert_eq!(concept_classid("res_partner"), Some(0x0204));
+    }
+
+    #[test]
+    fn concept_classid_resolves_multi_dot_model_names() {
+        // Two underscores → two dots: account_move_line → account.move.line
+        // → COMMERCIAL_LINE_ITEM 0x0201.
+        assert_eq!(concept_classid("account_move_line"), Some(0x0201));
+    }
+
+    #[test]
+    fn concept_classid_accepts_already_dotted_model_form() {
+        // A caller already holding the dotted model name resolves via the
+        // raw-name fallback (the normalize is a no-op without underscores).
+        assert_eq!(concept_classid("account.move"), Some(0x0202));
+    }
+
+    #[test]
+    fn concept_classid_is_none_outside_the_codebook() {
+        assert_eq!(concept_classid("ir_cron"), None);
+        assert_eq!(concept_classid(""), None);
+    }
+
+    #[test]
+    fn render_classid_stamps_odoo_app_prefix() {
+        // 0x0002 (Odoo render lens) ‖ low concept.
+        assert_eq!(render_classid("account_move"), Some(0x0002_0202));
+        assert_eq!(render_classid("account_analytic_line"), Some(0x0002_0103));
+        assert_eq!(render_classid("res_partner"), Some(0x0002_0204));
+        assert_eq!(render_classid("ir_cron"), None);
+        assert_eq!(ODOO_APP_PREFIX, 0x0002);
+    }
+
+    #[test]
+    fn schema_classids_resolves_every_table_in_order() {
+        let schema = Schema {
+            tables: vec![
+                TableDefinition::new("account_move"),
+                TableDefinition::new("account_analytic_line"),
+                TableDefinition::new("ir_cron"),
+            ],
+            functions: Vec::new(),
+            events: Vec::new(),
+        };
+        let ids = schema_classids(&schema);
+        assert_eq!(
+            ids,
+            vec![
+                ("account_move".to_string(), Some(0x0202)),
+                ("account_analytic_line".to_string(), Some(0x0103)),
+                ("ir_cron".to_string(), None),
+            ]
+        );
     }
 }
