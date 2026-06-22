@@ -47,6 +47,7 @@
 //! println!("{}", schema.to_sql());
 //! ```
 
+mod alignment;
 mod emit;
 mod inheritance;
 #[cfg(feature = "ogar-emit")]
@@ -75,6 +76,11 @@ pub use ogar_actions::{corpus_action_rows, corpus_to_actions};
 #[cfg(feature = "ogar-emit")]
 pub use ogar_vocab::class_ids;
 
+pub use alignment::{
+    dolce_odoo, resolve_odoo, DolceMarker, OdooFamily, OdooSeedRow, OwlPivot, FAMILY_BILLING_CORE,
+    FAMILY_HR_FOUNDATION, FAMILY_PRODUCT_CATALOG, FAMILY_SMB_ACCOUNTING,
+    FAMILY_SMB_FOUNDRY_CUSTOMER, FAMILY_SMB_FOUNDRY_INVOICE, ODOO_SEED,
+};
 pub use emit::corpus_to_schema;
 pub use inheritance::InheritanceMap;
 pub use recompute_dag::{MethodId, MethodKind, RecomputeDag};
