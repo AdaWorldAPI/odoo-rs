@@ -4,7 +4,78 @@
 > multi-PR repatriation of Odoo-specific content currently misplaced in
 > `lance-graph`. The fix is not a code move; it is an **altitude correction**.
 >
+> **Updated 2026-06-23** with citations to the parallel OGAR + lance-graph canon
+> that shipped the **same framing** in canonical form (OGAR #104, #105, #106,
+> #107, #108, #109, #110; lance-graph #591, #592). See § "Canonical references"
+> below — the compiler-AST frame this doc names is already canonical upstream;
+> the repatriation work and the cross-validation findings that surfaced from it
+> remain unique to this consumer side.
+>
 > Read this BEFORE proposing any "move the X file from lance-graph to Y" PR.
+
+## Canonical references — the parallel work in OGAR + lance-graph
+
+The compiler-AST framing this doc names was independently shipped in canonical
+form upstream **before** the repatriation PRs landed. odoo-rs PRs #12-#15
+re-derive these framings; this section closes the cite-gap so a future session
+reaches for the canon first, not for re-derivation.
+
+| Upstream PR | What it ships | Status this doc aligns to |
+|---|---|---|
+| **OGAR #104** | `docs/OGAR-AS-IR.md` — the one-page mapping of compiler-phase → OGAR / lance-graph piece (front-end / IR / symbol table / linker / public ABI / semantic-analysis / optimization passes / codegen / native-codegen-via-jitson / runtime). Six tests for IR-design proposals. | **Canonical** — the compiler-AST frame this doc uses in §"The frame correction" is the same lens, in the same vocabulary. odoo-rs PR #13's compiler-AST frame in `triple.rs` was an independent re-derivation. |
+| **OGAR #109** | EPIPHANY: *"OGIT was already a semantic compiler's symbol table"* — graded-fences assessment of bardioc's prior art on the OGIT artifact (NTO + SGO + MARS XSD + extract_classes.py). 3/6 IR-shape tests passed by OGIT alone; the **unification of structural + behavioural arms is OGAR's contribution**, not bardioc's. | **Canonical** — the "symbol-table" framing odoo-rs PR #14 used for the alignment table is the same lens this entry names for OGIT. |
+| **OGAR #105** | OGIT mirrored **1:1 at pinned SHA** at `vocab/imports/ogit/` (9.3 MB, 2010 files, byte-identical to upstream). `ogar-from-schema` producer: line-oriented TTL parser, **bijective reverse-emit** (semantic round-trip), SGO upper-ontology with 176 verb-decls. MARS XSD as closed-formal calibration oracle. Three mechanically-enforced bijection levels. | **Canonical TTL-import infrastructure** — the SPO predicate schema, edge whitelist, and TTL-source list pulled into `od_ontology::triple` (#13) and `od_ontology::alignment` (#14, #15) are bijection-eligible inputs to `ogar-from-schema::ttl`. |
+| **OGAR #106** | 9-domain round-trip test + XSD transcode (drops Python from the oracle) + **`docs/ODOO-DIGEST-TO-OGIT.md`** Foundry-parity collapse table + verb-as-class-as-askama-template framing. | **Canonical Odoo-digest pipeline** — the Foundry-parity collapse (Ingest / Storage / Render / IAM+audit) is the upstream version of the "ODOO teaches us to become better than Palantir Foundry" frame this doc names. |
+| **OGAR #107** | **Three corrections** to the #106 framing — **including the one this doc had wrong:** the producer is **`ruff_python_spo + ogar-from-ruff`** (existing crates), NOT a fictional `ogar-from-python` / `ogar-from-odoo`. `lance-graph-arm-discovery` is an Association Rule Mining engine, not a producer. Digests belong in `vocab/exports/`, not `imports/`. | **CORRECTION absorbed below** in § "Producer naming — corrected per OGAR #107". |
+| **OGAR #108** | `vocab/exports/` is a **staging tier**, not permanent: producer → `exports/` → promote to OGIT fork → re-vendor to `imports/` → consumers read `imports/`. (Walks back #107's "migrate the 11 Accounting files" task once the false migration-risk premise was verified.) | **Canonical storage-tier model** — the staging-tier flow is the lifecycle for any future TTL the per-app consumer wants to promote to OGIT. |
+| **OGAR #110** | Mints `0x0B` AuthStore class family — keystone §7 and the canonical OGIT Auth shape (`NTO/Auth/Configuration`) **converge 1:1**. "Reserving costs nothing"; enforcement stays gated on `PROBE-OGAR-RBAC-AUTHORIZE`. | **Pattern for future Odoo mints** — convergence-shaped class-id mints (e.g. the 11 missing `OdooPort` aliases the cross-axis check in #14 surfaced) follow this template. |
+| **lance-graph #591** | OGAR consumer pre-flight spellbook — consumer-side mirror of OGAR #99. Five 90-second questions; the three-move remediation recipe. | **Canonical consumer governance** — odoo-rs is now a consumer of the OGAR Core; this spellbook applies. |
+| **lance-graph #592** | `contract::ogar_codebook` mirrors OGAR #97's APP-prefix layer. Pinned allocation: **Odoo `0x0002`**. Wire-compatible mirror; drift-test guarded. | **Canonical APP-prefix** — `ODOO_BUNDLE_ID.graph = 0x0002` constant landed in odoo-rs #15 is wire-compat-correct against this mirror. |
+| **q2 #42** | Bumped q2's stale OGAR pin (`b6a12a6` → `302c284`) so q2's Railway build sees `OdooPort/SmbPort/WoaPort`. | **Cross-repo coordination evidence** — the `OdooPort` consumer surface this doc names is load-bearing across q2 / lance-graph / odoo-rs; stale pins propagate breakage. Pin discipline is part of the repatriation lifecycle. |
+
+## Producer naming — corrected per OGAR #107
+
+A previous version of this doc named **`ogar-from-odoo`** as the eventual
+producer crate. **That naming was wrong** — OGAR #107 corrected the parallel
+framing in `docs/ODOO-DIGEST-TO-OGIT.md`. The canonical producer chain is:
+
+```text
+odoo/addons/<module>/models/*.py
+        │
+        ▼
+  ruff_python_spo  ──→  ruff_spo_triplet::Model
+   (Python AST frontend,                  │
+    sibling of                            ▼
+    ruff_ruby_spo)              ogar_from_ruff::lift_model_graph
+                                          │
+                                          ▼
+                                 Vec<ogar_vocab::Class>
+```
+
+`ogar-from-ruff` already ships for Ruby (Rails); the missing piece for Odoo is
+the **`ruff_python_spo`** frontend. Same correction for medcare-rs:
+`ruff_rust_spo + ogar-from-ruff`, NOT a fictional `ogar-from-rust`.
+
+**Throughout this doc, "ogar-from-odoo" should be read as `ruff_python_spo +
+ogar-from-ruff`.** The naming is preserved in historical-context references
+below for traceability against PR #12 as merged.
+
+## What the parallel canon means for this doc's Phase ordering
+
+The phase ordering ("pull → separate → push to OGAR → push to ruff →
+subtract") remains correct. The upstream canon refines two phases:
+
+- **Phase 3 (push empowerments to OGAR)** — the destination is OGAR's existing
+  `ogar-vocab` + `ogar-from-ruff` machinery, not a new `ogar-from-odoo` crate.
+  The 11 missing `OdooPort` aliases the cross-axis check in #14 surfaced are
+  the immediate Phase-3 work; the empowerment shapes (`OwlPivot`,
+  family-default-style → `StyleCluster` inheritance, suffix-classifier algorithm)
+  land as universal `Class` capabilities per OGAR #104's IR-design tests.
+- **Phase 4 (push universal predicates to ruff)** — this IS the
+  `ruff_python_spo` frontend per OGAR #107. It is the **keystone** for
+  shrinking every consumer crate: with it in place, every per-language
+  `ogar-from-<lang>` becomes a thin lifter (the way `ogar-from-rails` is
+  986 LOC because `ruff_ruby_spo` does the heavy lift).
 
 ## The mis-altitude (what's wrong today)
 
@@ -64,7 +135,11 @@ already speak OGAR vocabulary, not raw `odoo:`-namespaced SPO that needs
 lifting — then **every** `ogar-from-<lang>` shrinks to a thin pass-through
 (`ogar-from-rails` is 986 LOC because `ruff_ruby_spo` does the heavy lift;
 `ogar-from-odoo`, when it exists, should be the same shape, not a 14K-LOC
-re-implementation).
+re-implementation). **CORRECTED per OGAR #107:** the canonical crate is not
+a future `ogar-from-odoo`; it is the **existing `ogar-from-ruff` consuming
+`ruff_python_spo`** — see § "Producer naming — corrected per OGAR #107"
+above. The principle remains: with `ruff_python_spo` in place, every per-app
+crate shrinks to a thin lifter.
 
 This is its own ask, filed against `ruff`:
 
