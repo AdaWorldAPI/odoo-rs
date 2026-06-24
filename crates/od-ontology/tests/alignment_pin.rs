@@ -451,11 +451,25 @@ fn seeded_classes_have_compatible_ogar_identity() {
     // classid); the difference (product / accounting / HR seed rows without an
     // OdooPort alias) IS the surface for a future OdooPort PR and is reported
     // as informational rather than asserted.
+    // After OGAR #111 + #126 + #127 (lance-graph #597 + #606 + #608), the
+    // cross-axis identity gap surfaced by this crate's PR #14 is fully
+    // closed: every seeded class has a canonical OGAR classid. The hard
+    // assertion now covers ALL 15 seeded classes (was commerce-arm 3 only
+    // pre-#111). Re-introducing a un-mapped class fires this test
+    // immediately.
     let mut without_classid: Vec<&str> = Vec::new();
     for row in ODOO_SEED {
         if OdooPort::class_id(row.odoo_class).is_none() {
             without_classid.push(row.odoo_class);
         }
+    }
+    without_classid.sort_unstable();
+    assert!(
+        without_classid.is_empty(),
+        "the cross-axis identity gap was closed by OGAR #111 + #126 + #127 — \
+         re-introducing un-mapped seeded class(es) regresses the closure: {:?}",
+        without_classid
+    );
     }
     without_classid.sort_unstable();
     eprintln!(
