@@ -470,26 +470,5 @@ fn seeded_classes_have_compatible_ogar_identity() {
          re-introducing un-mapped seeded class(es) regresses the closure: {:?}",
         without_classid
     );
-    }
-    without_classid.sort_unstable();
-    eprintln!(
-        "informational: {} of {} seeded classes have no canonical OGAR \
-         classid yet (= candidates for the next OdooPort PR — product / \
-         accounting / HR basins): {:?}",
-        without_classid.len(),
-        ODOO_SEED.len(),
-        without_classid
-    );
 
-    // HARD assertion: the commerce-arm intersection. These three are in BOTH
-    // surfaces today; dropping any of them from `OdooPort::aliases()` would
-    // break the cross-axis identity.
-    let commerce_arm: &[&str] = &["res.partner", "account.move", "account.move.line"];
-    for cls in commerce_arm {
-        assert!(
-            OdooPort::class_id(cls).is_some(),
-            "commerce-arm seeded class `{cls}` has no canonical OGAR classid; \
-             OdooPort and the alignment table have drifted apart"
-        );
-    }
 }
