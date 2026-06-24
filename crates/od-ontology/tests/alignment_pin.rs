@@ -442,15 +442,12 @@ fn seeded_classes_have_compatible_ogar_identity() {
     //     (covers six basins: BillingCore + SMBAccounting + ProductCatalog +
     //     SmbFoundryCustomer + SmbFoundryInvoice + HRFoundation).
     //   - OGAR's `OdooPort` aliases = "which canonical OGAR class_id"
-    //     (currently covers the **commerce arm** only — `0x02XX` ids:
-    //     COMMERCIAL_DOCUMENT, COMMERCIAL_LINE_ITEM, TAX_POLICY,
-    //     BILLING_PARTY, PAYMENT_RECORD, CURRENCY_POLICY, plus the
-    //     cross-arm BILLABLE_WORK_ENTRY).
+    //     (covers all six basins as of OGAR #127: commerce 0x02XX +
+    //     HR 0x0DXX + the cross-arm BILLABLE_WORK_ENTRY bridge).
     //
-    // The intersection MUST agree (every commerce-arm seed row has an OdooPort
-    // classid); the difference (product / accounting / HR seed rows without an
-    // OdooPort alias) IS the surface for a future OdooPort PR and is reported
-    // as informational rather than asserted.
+    // After OGAR #111 + #126 + #127 the two axes are in full agreement: every
+    // seeded class has a canonical OGAR classid, and the hard assertion below
+    // checks that strictly.
     // After OGAR #111 + #126 + #127 (lance-graph #597 + #606 + #608), the
     // cross-axis identity gap surfaced by this crate's PR #14 is fully
     // closed: every seeded class has a canonical OGAR classid. The hard
