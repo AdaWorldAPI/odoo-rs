@@ -34,8 +34,8 @@ serde_json = "1"
 # COMMENT. The bump crosses #95 (medcare, additive) + #96 (convergence-pin
 # test) + #97 + #98 (reverse map); OdooPort + the 9 ODOO_ALIASES are
 # byte-identical across the whole range (re-verified).
-ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "ac4b4162bb6ba8d590be3b2b37a07a44f7135d6c", optional = true }
-ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "ac4b4162bb6ba8d590be3b2b37a07a44f7135d6c", optional = true }
+ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "597ecb120fc8842c5b8aa552be506d2462151cec", optional = true }
+ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "597ecb120fc8842c5b8aa552be506d2462151cec", optional = true }
 
 [features]
 # Opt-in CLI (mirrors openproject-nexgen-rs#31's `--features cli` discipline).
