@@ -1,0 +1,16 @@
+[toolchain]
+# AdaWorldAPI ecosystem-wide pin: rust 1.95 — matches lance-graph, OGAR,
+# ndarray, ruff, openproject-nexgen-rs, woa-rs, and MedCare-rs.
+#
+# odoo-rs's `ogar-emit` path depends on the AdaWorldAPI/OGAR fork
+# (ogar-vocab + ogar-adapter-surrealql), which requires rustc 1.95.
+# Without this pin the build falls back to the host default toolchain
+# (1.94.1), and the OGAR-dependent crates fail to compile — exactly the
+# gap the transcode-status audit hit. The default (serde-only) build
+# compiled fine on 1.94, so this pin is what unblocks the OGAR half.
+#
+# Don't add a patch number to the channel string (e.g. "1.95.1") —
+# rustup resolves the latest patch of the 1.95 line automatically.
+channel = "1.95"
+components = ["rustfmt", "clippy"]
+profile = "default"
