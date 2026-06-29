@@ -133,3 +133,75 @@ reverse lookup that doesn't exist yet.
 
 Shipped as odoo-rs PR #3 on `claude/odoo-classid-consume` (builds on the
 merged #2 classid pull).
+
+---
+
+## Phase 2 (2026-06-29) — full thinning: od-ontology → OGAR-substrate caller
+
+> The operator's framing: *"~85 % would be in the OGAR transpile substrate,
+> and the transcode then is just a generic compiler-store caller with some
+> adapters; everything 'impossible' becomes a custom adapter + ClassView +
+> ontological adaptability, at the cost of an import."*
+
+**What changed upstream — #132 unblocks W3.3's biggest gap.** The OGAR
+per-class transpile substrate landed (OGAR #132, on main):
+`ogar-from-ruff::{lift_model_graph_python, mint, emit}` +
+`docs/OGAR-TRANSPILE-SUBSTRATE.md`. Two things matter here:
+
+1. **The relation gap is closed at the source.** Before #132 the Odoo lift
+   dropped relational fields (the Codex P1 on #131); now ruff's `relation_kind`
+   predicate (ruff #35) + `project_odoo_fields` give the shared
+   `ogar_vocab::Class` its **associations** — `Many2one → BelongsTo`,
+   `One2many → HasMany` (inverse), `Many2many → HasAndBelongsToMany`, each with
+   the comodel as `class_name`. So the **W3.3 "One2many/Many2many
+   `array<record>`" gap now has the data it was missing** — the shared emitter
+   can render it; it no longer *needs* od-ontology's native fork to carry
+   relations.
+2. **The substrate owns both transpile legs.** Pull-in
+   (`compile_graph_python::<OdooPort>` → `Vec<CompiledClass{class, facet}>`,
+   `account.move → 0x0002_0202`) and pull-back (`emit_rust`, the codegen
+   reference; `ogar-adapter-surrealql` is the DDL reference). od-ontology's
+   bespoke `triple` (input) + `surreal_ast` + native emit (output) are now
+   *redundant* with the substrate, not load-bearing.
+
+### The staged thinning (W3.3 finished, additive then subtractive)
+
+| Stage | Where | What | Verification |
+|---|---|---|---|
+| **A — relational arrays** | OGAR `ogar-adapter-surrealql` | Emit `HasMany`/`HasAndBelongsToMany` associations as `array<record<comodel>>` (the now-available #132 association data). Closes the largest W3.3 emitter gap. | CI-gated (surrealdb) |
+| **B — substrate input** | odoo-rs `od-ontology` | Source → `ruff_python_spo` → `ModelGraph` → `compile_graph_python::<OdooPort>` becomes the canonical lower path, **superseding** `parse_ndjson → corpus_to_schema → schema_to_classes` (the SPO-corpus intermediate). | CI-gated |
+| **C — delete the fork** | odoo-rs `od-ontology` | Remove `surreal_ast` + `triple` + native `ToSql` emit (W3.3). od-ontology collapses to a thin `compile_graph` caller + the shared `ogar-adapter-surrealql` emit. | CI-gated |
+
+### What stays — the "impossible" 15 % (adapters, not deletions)
+
+- **`od-posting`** — GoBD double-entry (gapless Belegnummer + inalterability
+  hash chain). Intrusive/stateful → stays a hand-written Rust adapter.
+- **Computed `VALUE` bodies + `DEFINE FUNCTION`/`EVENT`** (W3.3 Stage-2 gaps 2-3)
+  — behaviour, not schema. These ride the OGAR **`ActionDef`/`KausalSpec`**
+  behaviour arm (or a consumer adapter) — never inline emitter codegen. Gated
+  with W3.4 (RBAC keystone). `DEFINE INDEX` (`_sql_constraints`) is mechanical
+  and folds into Stage A.
+- **Grounding (FIBO/DOLCE)** — `alignment::ODOO_SEED` + `odoo-to-fibo.ttl` stay
+  as the *source* of grounding, but are **resolved late** via
+  `classid → ClassView → OGIT` (the substrate's resolve-don't-store rule), not
+  re-lowered per class.
+
+### End state — od-ontology, thinned
+
+```
+od-ontology  (after Phase 2)
+  = ruff_python_spo (parse Odoo source)
+  + compile_graph::<OdooPort>            (the 85% — pulled from OGAR)
+  + ogar-adapter-surrealql               (shared emit)
+  + a thin wrapper contract (lance-graph-contract types)
+  + od-posting                           (the 15% GoBD adapter)
+```
+
+> **Constraint (honest):** `ogar-adapter-surrealql` and `od-ontology` both pull
+> the `surrealdb` git dep (403 in-sandbox), so every Phase-2 stage is
+> **CI-verified, not probe-verifiable**. Each stage lands additively behind its
+> green CI before the subtractive Stage C deletes the fork; the native path is
+> never removed before the shared path provably covers it (the W3.3 guardrail).
+
+Cross-ref: OGAR `docs/OGAR-TRANSPILE-SUBSTRATE.md` (the substrate), OGAR #132
+(lift + mint + emit), ruff #34/#35 (`ruff_python_spo` + `relation_kind`).
