@@ -264,3 +264,67 @@ green via a `[path]`-override probe, and a real `account.move` source lowered to
 `ToSql`) — the native path still owns `DEFINE FUNCTION`/`EVENT`/`INDEX` +
 computed `VALUE`/`READONLY` (the behaviour arm, W3.4); deleting now loses the
 reactive wiring. W3.4's RBAC keystone is upstream CONJECTURE.
+
+---
+
+## Recipe-bitmask probe — AR-lifecycle-override redundancy (OGAR `D-RECIPE-BITMASK`)
+
+> **Framing (operator, 2026-06-30):** OGAR is **Open Graph *Active Record***, so
+> the canonical "recipe" IS the AR lifecycle protocol. A best-shaped (AR-canonical)
+> consumer stores that recipe once and carries only a per-class override *bitmask*
+> + the genuine deltas — the conjecture is that this thins the "impossible 15%"
+> behavioural leftover toward ~7% for the best-shaped consumers. The ClassView +
+> bitmask + ERB→askama view port is the rendering tier on top (the icing); the AR
+> core is the substrate.
+
+The consumer-side falsifier lives at
+`crates/od-ontology/tests/recipe_redundancy_probe.rs` — a **default-build**
+(offline, no `ogar-emit`, no git deps) measurement that mirrors
+`ogar_actions::corpus_to_actions`'s classification (raises ⇒ guard; else
+`MethodKind::Compute` ⇒ compute) and measures how much of the lifted behavioural
+arm collapses to the two shared recipe shapes. An `ogar-emit`-gated block pins the
+mirror to the real `corpus_action_rows` lift so the two can never drift.
+
+**Measured (slice_2 corpus — `account_move` + `account_move_line` + `res_partner`
++ `res_company`):**
+
+```
+behavioral arm     : 358  (guards 47 + computes 311)
+  computes resolved: 141  (reads captured) · unresolved 170 (reads NOT captured)
+recipe shapes      : 2 carry all 358 behavioral methods
+guard arm          : 47 guards → 1 shared recipe (46 hidden)   — FULL collapse
+compute path-sets  : 101 distinct of 141 (40 dedup) · avg 1.6 paths
+headline (188 resolved): recipe-collapsible 86 (45.7%) · genuine leftover 102 (54.3%)
+```
+
+**Verdict (honest, Odoo / Python = UPPER bound):**
+
+- The **guard arm collapses fully** — every `@api.constrains` guard is the same
+  AR recipe (`LifecycleTrigger{before_save}` + `Reject`); 47 → 1. This is the
+  recipe-bitmask mechanism working perfectly on a real arm.
+- The **compute arm is mostly genuine** — 101 distinct dependency path-sets of
+  141 resolved computes; the bitmask hides only 40. Odoo's `_compute_*` methods
+  each react to a different field set.
+- **Leftover 54.3% ≫ 7% → the strong reading is REFUTED** ("Odoo collapses to
+  7%") and the conjecture's **scoping is CONFIRMED**: 7% is the best-shaped
+  *Rails-AR* case, not compute-heavy *Odoo-Python*.
+- **Why this is an upper bound (two gaps surfaced):** (a) **inherited-vs-override
+  is unmeasurable on this slice** — the corpus *does* carry `inherits_from` (8
+  edges in slice_2), but every base mixin it names (`mail_thread`,
+  `sequence_mixin`, `analytic_mixin`, …) is **out-of-slice**, so the bases' method
+  sets aren't present to dedup an override against (and separately the live-source
+  `ruff_python_spo` path — `compile_source` — drops `_inherit` in `build_graph`
+  outright); inheritance is the biggest collapse lever and it's invisible here.
+  And (b) **method bodies / decorator *types* are not captured** (only
+  `@api.depends` args + `reads`/`raises` facts), so body-dedup (lossless-DO §1's
+  stricter test) is invisible. Both can only LOWER the leftover, never raise it.
+  Filed for upstream in `specs/UPSTREAM_WISHLIST.md` (emit `inherits_from` for
+  Odoo `_inherit`; optional method-body hash).
+
+The clean AR-recipe measurement belongs on the **Rails/OpenProject** side, where
+`ruff_ruby_spo` captures `callbacks` / `validations` / `sti` as first-class
+`Model` data (the recipe *is* the captured AR protocol). Handover with the
+concrete Ruby probe spec:
+`openproject-nexgen-rs/.claude/handovers/`. Canon home for the conjecture +
+falsifier registration: OGAR `D-RECIPE-BITMASK` / `E-RECIPE-BITMASK` /
+`PROBE-OGAR-AR-RECIPE-COLLAPSE`.
