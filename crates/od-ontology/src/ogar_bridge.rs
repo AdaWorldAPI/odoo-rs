@@ -46,6 +46,7 @@
 //! - **`DEFINE INDEX`** (`_sql_constraints` unique tuples): not part of the
 //!   OGAR IR; dropped.
 
+use ogar_from_ruff::mint::{compile_graph_python, CompiledClass};
 use ogar_vocab::app::render_classid_for;
 use ogar_vocab::ports::{OdooPort, PortSpec};
 use ogar_vocab::{canonical_concept_name, Association, AssociationKind, Attribute, Class};
@@ -100,6 +101,67 @@ pub fn emit_via_ogar_annotated(schema: &Schema) -> String {
                     Some(name) => format!("{name} (classid:0x{render:08X})"),
                     // `lo` came from the codebook, so the reverse lookup is
                     // total — the bare-hex arm is a defensive fallback only.
+                    None => format!("classid:0x{render:08X}"),
+                });
+            }
+            class
+        })
+        .collect();
+    ogar_adapter_surrealql::emit_surrealql_ddl(&classes)
+}
+
+// ── Substrate-input lowering (Phase 2 Stage B) ──────────────────────────
+//
+// The convergence's INPUT half: lower an Odoo model *source* (`.py` text)
+// straight through the shared OGAR transpile substrate (OGAR #132) — parse with
+// `ruff_python_spo`, lift + mint with `compile_graph_python::<OdooPort>` — instead
+// of re-deriving it through the bespoke `parse_ndjson -> corpus_to_schema ->
+// schema_to_classes` corpus path. This is the "85% pulled from OGAR" thinning:
+// `od-ontology` stops owning the lift and becomes a substrate caller. The shared
+// `ogar-adapter-surrealql` then emits the DDL — including the Stage-A
+// `array<record<…>>` for One2many/Many2many. Additive: the native path is
+// untouched, and the W3.3 fork-delete (Stage C) stays gated on the behaviour arm.
+
+/// Compile Odoo model source (`.py` text) to the canonical OGAR
+/// `Vec<CompiledClass>` via `ruff_python_spo` + `compile_graph_python::<OdooPort>`
+/// — the substrate-input leg of the odoo-rs⟷OGAR convergence. Source that fails
+/// to parse contributes nothing (`ruff_python_spo`'s silent-skip invariant).
+///
+/// Each [`CompiledClass`] carries the lifted `ogar_vocab::Class` (structure:
+/// attributes + associations, with the comodel on each association) and the
+/// minted `facet` (identity: the render classid for codebook models).
+#[must_use]
+pub fn compile_source(src: &str) -> Vec<CompiledClass> {
+    compile_graph_python::<OdooPort>(&ruff_python_spo::extract_from_source(src))
+}
+
+/// Emit SurrealQL DDL for Odoo model *source* through the shared OGAR substrate
+/// + `ogar-adapter-surrealql`, stamping each codebook table's canonical concept
+/// **name** + full render classid into its `DEFINE TABLE … COMMENT` clause.
+///
+/// The substrate-input sibling of [`emit_via_ogar_annotated`] — which lowers the
+/// bespoke [`Schema`](crate::Schema); both converge on the same emitter, so the
+/// `source` path and the `corpus` path produce the same shape of DDL. A model
+/// outside the `OdooPort` codebook mints render classid `0` and gets no COMMENT;
+/// its structural DDL is unaffected (the stamp is identity-only — never
+/// lifecycle/behaviour, per the SurrealQL-AST-trap rule). The concept name comes
+/// from [`canonical_concept_name`] (OGAR's `id -> name` reverse map), never
+/// re-derived locally.
+#[must_use]
+pub fn emit_source_via_ogar(src: &str) -> String {
+    let classes: Vec<Class> = compile_source(src)
+        .into_iter()
+        .map(|cc| {
+            let render = cc.facet.facet_classid();
+            let mut class = cc.class;
+            // Codebook hit (non-zero render classid): stamp the concept name +
+            // render id into the catalog COMMENT (the emitter renders
+            // `class.description` as `… COMMENT '<desc>'`). The low u16 is the
+            // shared concept the reverse map keys on.
+            if render != 0 {
+                let concept = render as u16;
+                class.description = Some(match canonical_concept_name(concept) {
+                    Some(name) => format!("{name} (classid:0x{render:08X})"),
                     None => format!("classid:0x{render:08X}"),
                 });
             }
@@ -459,5 +521,54 @@ mod tests {
             emit_via_ogar(&schema),
             "an uncodified-only schema must emit identical DDL via both paths"
         );
+    }
+
+    // ── Substrate-input lowering (Phase 2 Stage B) ──────────────────────
+
+    #[test]
+    fn emit_source_via_ogar_lowers_odoo_source_to_annotated_ddl() {
+        // The substrate-input path end to end: Odoo .py source -> ruff_python_spo
+        // -> compile_graph_python::<OdooPort> -> shared ogar-adapter-surrealql. A
+        // minimal account.move with a scalar (char), a Many2one, and a One2many
+        // — also exercises the Stage-A array<record<…>>.
+        const SRC: &str = r#"
+from odoo import models, fields
+
+
+class AccountMove(models.Model):
+    _name = 'account.move'
+    name = fields.Char(required=True)
+    partner_id = fields.Many2one('res.partner')
+    line_ids = fields.One2many('account.move.line', 'move_id')
+"#;
+        let ddl = emit_source_via_ogar(SRC);
+        // Codebook identity rides into the catalog COMMENT via the minted facet
+        // + OGAR's reverse map (account.move -> COMMERCIAL_DOCUMENT 0x0002_0202).
+        assert!(
+            ddl.contains("COMMENT 'commercial_document (classid:0x00020202)'"),
+            "missing annotated COMMENT; got:\n{ddl}"
+        );
+        assert!(
+            ddl.contains("DEFINE TABLE account_move"),
+            "missing table; got:\n{ddl}"
+        );
+        // Many2one -> owning-side record<…>; One2many -> Stage-A array<record<…>>.
+        assert!(ddl.contains("record<"), "Many2one record<> missing; got:\n{ddl}");
+        assert!(
+            ddl.contains("array<record<"),
+            "One2many array<record<>> missing; got:\n{ddl}"
+        );
+    }
+
+    #[test]
+    fn compile_source_skips_unparseable_and_resolves_classids() {
+        // Parse failure contributes nothing; a parseable codebook model mints
+        // its render classid through the facet.
+        assert!(compile_source("class Broken(:\n").is_empty());
+        let compiled = compile_source(
+            "from odoo import models, fields\n\n\nclass AM(models.Model):\n    _name = 'account.move'\n    name = fields.Char()\n",
+        );
+        assert_eq!(compiled.len(), 1);
+        assert_eq!(compiled[0].facet.facet_classid(), 0x0002_0202);
     }
 }

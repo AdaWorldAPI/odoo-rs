@@ -61,8 +61,8 @@ mod triple;
 
 #[cfg(feature = "ogar-emit")]
 pub use ogar_bridge::{
-    concept_classid, emit_via_ogar, emit_via_ogar_annotated, render_classid, schema_classids,
-    schema_to_classes, ODOO_APP_PREFIX,
+    compile_source, concept_classid, emit_source_via_ogar, emit_via_ogar, emit_via_ogar_annotated,
+    render_classid, schema_classids, schema_to_classes, ODOO_APP_PREFIX,
 };
 
 /// Behavioral-arm lowering — Odoo's reactive lifecycle → `ogar_vocab::ActionDef`
