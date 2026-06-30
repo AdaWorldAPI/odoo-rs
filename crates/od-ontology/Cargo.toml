@@ -27,16 +27,25 @@ serde_json = "1"
 #                              `mint::compile_graph_python::<OdooPort>` (lift+mint)
 #   * ruff_python_spo        — parse Odoo source `.py` -> `ruff_spo_triplet::ModelGraph`
 #
-# Tracked at `branch = "main"` (Phase-2 Stage-B bump). The prior pin (rev
-# 597ecb12) predated OGAR #132, so it lacked `ogar-from-ruff` + the Stage-A
-# `array<record<…>>` emitter. branch=main keeps OdooPort + the substrate + the
-# ruff `field_type` predicate moving in lockstep upstream. Stage B adds the
-# `source -> ruff -> compile_graph -> shared emit` lower path ALONGSIDE the
-# native one; the W3.3 fork-delete (Stage C) stays gated.
-ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
-ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
-ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
-ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main", optional = true }
+# SOURCE-ALIGNMENT (Codex P1 on #20): `ruff_python_spo` and OGAR's
+# `ogar-from-ruff` both depend on `ruff_spo_triplet` — the `ModelGraph` type.
+# They MUST resolve to the SAME cargo source, or the types won't unify (the
+# graph `extract_from_source` returns wouldn't be accepted by
+# `compile_graph_python`). So the pins are deliberately mutually-consistent:
+#   * OGAR `rev = 7d0dca2` — current OGAR main; carries #132 `ogar-from-ruff` +
+#     the Stage-A `array<record<…>>` emitter (supersedes the pre-#132 597ecb12).
+#   * `ruff_python_spo` `rev = 4860e79` — the EXACT ruff rev OGAR 7d0dca2's
+#     `ogar-from-ruff` pins for `ruff_spo_triplet`, so the graph has ONE source.
+# A bump is a deliberate lockstep step (advance BOTH to the new OGAR main + the
+# ruff rev that main's `ogar-from-ruff` pins), per od-ontology's rev-pin
+# convention. The `ogar-adapter-surrealql` EMIT path is dep-light (zero
+# surrealdb — that's gated behind its `surrealdb-parser` feature, off here), so
+# the convergence builds offline. Stage B adds the `source -> ruff ->
+# compile_graph -> shared emit` path ALONGSIDE the native one; W3.3 stays gated.
+ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
+ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
+ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
+ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", rev = "4860e7987aa0c9453f812bb0178962d1cba66df0", optional = true }
 
 [features]
 # Opt-in CLI (mirrors openproject-nexgen-rs#31's `--features cli` discipline).

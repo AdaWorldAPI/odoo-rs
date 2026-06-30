@@ -246,8 +246,19 @@ behind its `surrealdb-parser` *feature* (the parse-back leg only); the emit path
 surrealdb. Stage B was verified **offline end-to-end**: od-ontology's full suite
 green via a `[path]`-override probe, and a real `account.move` source lowered to
 `DEFINE TABLE account_move … COMMENT 'commercial_document (classid:0x00020202)'`
-+ `record<\`res.partner\`>` (Many2one) + `array<record<\`account.move.line\`>>`
++ `record<res_partner>` (Many2one) + `array<record<account_move_line>>`
 (One2many). Only the `surrealdb-parser` round-trip is genuinely CI-only.
+
+**Two review fixes (Codex on #20):**
+- **P1 — source alignment.** `ruff_python_spo` (od-ontology) and OGAR's
+  `ogar-from-ruff` both depend on `ruff_spo_triplet` (the `ModelGraph` type), so
+  they must resolve to ONE cargo source or the types won't unify. The deps are
+  pinned to a mutually-consistent snapshot — OGAR `rev = 7d0dca2` + the exact
+  ruff `rev = 4860e79` that OGAR's `ogar-from-ruff` pins. (The `[path]`-override
+  probe masked this by collapsing both ruff sources to one local copy.)
+- **P2 — comodel normalization.** The substrate carries the raw dotted Odoo
+  comodel (`res.partner`); `emit_source_via_ogar` normalizes association targets
+  to table form (`res_partner`) so `record<…>` matches the `DEFINE TABLE` name.
 
 **Still gated (unchanged):** Stage C (delete `surreal_ast` + `triple` + native
 `ToSql`) — the native path still owns `DEFINE FUNCTION`/`EVENT`/`INDEX` +

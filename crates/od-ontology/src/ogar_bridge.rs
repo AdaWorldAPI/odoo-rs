@@ -165,6 +165,18 @@ pub fn emit_source_via_ogar(src: &str) -> String {
                     None => format!("classid:0x{render:08X}"),
                 });
             }
+            // Normalize relational comodel targets to TABLE form (dot ->
+            // underscore) so the emitted `record<…>` points at the SurrealDB
+            // table the schema defines. The substrate carries the raw dotted
+            // Odoo comodel (`res.partner`) as provenance, but a model `_name` is
+            // lowered to a table named `res_partner` (`_name.replace('.', '_')`),
+            // so an un-normalized `record<`res.partner`>` would dangle. The
+            // table-naming decision is the consumer's (Codex P2 on #20).
+            for assoc in &mut class.associations {
+                if let Some(target) = &assoc.class_name {
+                    assoc.class_name = Some(target.replace('.', "_"));
+                }
+            }
             class
         })
         .collect();
@@ -552,11 +564,21 @@ class AccountMove(models.Model):
             ddl.contains("DEFINE TABLE account_move"),
             "missing table; got:\n{ddl}"
         );
-        // Many2one -> owning-side record<…>; One2many -> Stage-A array<record<…>>.
-        assert!(ddl.contains("record<"), "Many2one record<> missing; got:\n{ddl}");
+        // Many2one -> owning-side record<res_partner>; the comodel is normalized
+        // to TABLE form (matching the DEFINE TABLE name), not left dotted (P2).
         assert!(
-            ddl.contains("array<record<"),
-            "One2many array<record<>> missing; got:\n{ddl}"
+            ddl.contains("record<res_partner>"),
+            "Many2one record<res_partner> missing / not normalized; got:\n{ddl}"
+        );
+        // One2many -> Stage-A array<record<account_move_line>> (normalized).
+        assert!(
+            ddl.contains("array<record<account_move_line>>"),
+            "One2many array<record<account_move_line>> missing; got:\n{ddl}"
+        );
+        // The raw dotted comodel must NOT leak into the DDL (P2 regression).
+        assert!(
+            !ddl.contains("`res.partner`") && !ddl.contains("`account.move.line`"),
+            "dotted comodel leaked into the DDL; got:\n{ddl}"
         );
     }
 
