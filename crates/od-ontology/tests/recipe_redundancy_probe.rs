@@ -51,6 +51,11 @@
 //! `MethodKind::Compute` ⇒ compute); the `ogar-emit`-gated assertion at the end
 //! pins the mirror to the real lift so the two can never silently drift.
 
+// Pedantic lints relaxed for this reporting probe: it prints a detailed
+// human-facing report (long fn), computes display percentages from small counts
+// (benign usize→f64), and its module docs are narrative (bare identifiers).
+#![allow(clippy::too_many_lines, clippy::cast_precision_loss, clippy::doc_markdown)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use od_ontology::{model_of, parse_ndjson, MethodKind, Triple};
