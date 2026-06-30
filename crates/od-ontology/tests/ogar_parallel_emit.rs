@@ -3,8 +3,9 @@
 //! Emits the real `account.move` slice TWO ways from the same `Schema`:
 //! the native bespoke [`ToSql`] path and the canonical
 //! `ogar-adapter-surrealql` path (via [`emit_via_ogar`]). Asserts what
-//! *converges* (DEFINE TABLE + scalar/`Many2one` DEFINE FIELD) and pins the
-//! exact Stage-2 *gaps* (One2many arrays, computed `VALUE`/`READONLY`,
+//! *converges* (DEFINE TABLE + scalar/`Many2one` DEFINE FIELD, and — since the
+//! OGAR Stage-A bump — One2many/Many2many `array<record<…>>`) and pins the
+//! remaining Stage-2 *gaps* (computed `VALUE`/`READONLY`,
 //! `DEFINE FUNCTION`/`DEFINE EVENT`) so they can't silently change.
 //!
 //! Run with: `cargo test -p od-ontology --features ogar-emit`.
@@ -74,33 +75,45 @@ fn ogar_fields_are_a_subset_of_native_fields() {
     );
 }
 
-/// The fields the OGAR path *drops* are exactly the One2many / Many2many
-/// collections — native renders them `array<record<…>>`; OGAR models them as
-/// `HasMany` (a comment, no column). This pins the gap precisely.
+/// **OGAR Stage A landed (the array<record> gap is closed).** The One2many /
+/// Many2many collections the OGAR path used to *drop* (a `HasMany` comment, no
+/// column) now converge as `array<record<…>>` fields — the same shape the
+/// native emit produces. This test was authored to flip exactly when Stage A
+/// lands; it now pins the convergence: nothing array-shaped is dropped, and the
+/// stale `HasMany` comment marker is gone.
 #[test]
-fn dropped_fields_are_exactly_the_array_collections() {
+fn array_collections_now_converge_not_dropped() {
     let (native, ogar) = schemas();
     let native_fields = fields_on(&native, "account_move");
     let ogar_fields = fields_on(&ogar, "account_move");
 
-    for dropped in native_fields.difference(&ogar_fields) {
+    // The shared adapter now emits the collections as array<record<…>>.
+    assert!(
+        ogar.contains("TYPE array<record<"),
+        "expected array<record<…>> for the One2many/Many2many collections after \
+         Stage A:\n{ogar}"
+    );
+    // …so every native `array<…>` collection field is now ALSO on the OGAR path
+    // (no longer dropped). Any non-array field still missing would be a real
+    // regression, surfaced by the difference set below.
+    for f in native_fields.difference(&ogar_fields) {
         let line = native
             .lines()
             .find(|l| {
                 l.trim_start()
-                    .starts_with(&format!("DEFINE FIELD {dropped} ON account_move"))
+                    .starts_with(&format!("DEFINE FIELD {f} ON account_move"))
             })
             .unwrap_or_default();
         assert!(
-            line.contains("array<"),
-            "field `{dropped}` was dropped by the OGAR path but is not an \
-             array collection (native line: {line})"
+            !line.contains("array<"),
+            "array collection `{f}` is still dropped by the OGAR path after \
+             Stage A (native line: {line})"
         );
     }
-    // And the OGAR path leaves the HasMany comment marker for those.
+    // The old HasMany comment marker is gone — the column is real now.
     assert!(
-        ogar.contains("HasMany") && ogar.contains("no DEFINE FIELD"),
-        "expected HasMany comment markers for the One2many collections"
+        !ogar.contains("HasMany"),
+        "stale HasMany comment marker present after Stage A:\n{ogar}"
     );
 }
 

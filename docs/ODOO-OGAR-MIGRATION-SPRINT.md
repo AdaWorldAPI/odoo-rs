@@ -205,3 +205,62 @@ od-ontology  (after Phase 2)
 
 Cross-ref: OGAR `docs/OGAR-TRANSPILE-SUBSTRATE.md` (the substrate), OGAR #132
 (lift + mint + emit), ruff #34/#35 (`ruff_python_spo` + `relation_kind`).
+
+---
+
+## Phase 2 Stage B — SHIPPED (2026-06-30): od-ontology consumes the substrate
+
+The substrate-input lower path landed in `od-ontology`, **additive** over the
+native corpus path (Stage C delete stays gated):
+
+```
+Odoo source .py
+  → ruff_python_spo::extract_from_source                     (parse)
+  → ogar_from_ruff::mint::compile_graph_python::<OdooPort>   (lift + mint = the 85%)
+  → Vec<CompiledClass { class, facet }>
+  → ogar_adapter_surrealql::emit_surrealql_ddl(&classes)     (shared emit, Stage A)
+```
+
+**What shipped:**
+- `src/ogar_bridge.rs`: `compile_source(src) -> Vec<CompiledClass>` +
+  `emit_source_via_ogar(src) -> String` (classid-annotated `DEFINE TABLE …
+  COMMENT` via the minted facet + `canonical_concept_name`); re-exported from
+  `lib.rs` under `ogar-emit`.
+- `Cargo.toml`: bumped the OGAR + ruff deps to `branch = "main"` (the prior
+  pre-#132 rev pin lacked `ogar-from-ruff`); added `ogar-from-ruff` +
+  `ruff_python_spo`.
+- Tests: `emit_source_via_ogar_lowers_odoo_source_to_annotated_ddl` +
+  `compile_source_skips_unparseable_and_resolves_classids`.
+
+**Stage A flowed through — the `array<record>` gap is closed.** Bumping to OGAR
+main pulled the Stage-A array emitter, so the *existing* `emit_via_ogar` path now
+renders One2many/Many2many as real `array<record<…>>` columns. The
+`ogar_parallel_emit.rs` gap-pin flipped exactly as it was authored to
+(`dropped_fields_are_exactly_the_array_collections` →
+`array_collections_now_converge_not_dropped`).
+
+**Correction to the Phase-2 "Constraint (honest)" note above — the EMIT path IS
+probe-verifiable offline.** `ogar-adapter-surrealql`'s `surrealdb` dep is gated
+behind its `surrealdb-parser` *feature* (the parse-back leg only); the emit path
+(`emit_surrealql_ddl`) is `ogar-vocab` + a hand-written formatter, zero
+surrealdb. Stage B was verified **offline end-to-end**: od-ontology's full suite
+green via a `[path]`-override probe, and a real `account.move` source lowered to
+`DEFINE TABLE account_move … COMMENT 'commercial_document (classid:0x00020202)'`
++ `record<res_partner>` (Many2one) + `array<record<account_move_line>>`
+(One2many). Only the `surrealdb-parser` round-trip is genuinely CI-only.
+
+**Two review fixes (Codex on #20):**
+- **P1 — source alignment.** `ruff_python_spo` (od-ontology) and OGAR's
+  `ogar-from-ruff` both depend on `ruff_spo_triplet` (the `ModelGraph` type), so
+  they must resolve to ONE cargo source or the types won't unify. The deps are
+  pinned to a mutually-consistent snapshot — OGAR `rev = 7d0dca2` + the exact
+  ruff `rev = 4860e79` that OGAR's `ogar-from-ruff` pins. (The `[path]`-override
+  probe masked this by collapsing both ruff sources to one local copy.)
+- **P2 — comodel normalization.** The substrate carries the raw dotted Odoo
+  comodel (`res.partner`); `emit_source_via_ogar` normalizes association targets
+  to table form (`res_partner`) so `record<…>` matches the `DEFINE TABLE` name.
+
+**Still gated (unchanged):** Stage C (delete `surreal_ast` + `triple` + native
+`ToSql`) — the native path still owns `DEFINE FUNCTION`/`EVENT`/`INDEX` +
+computed `VALUE`/`READONLY` (the behaviour arm, W3.4); deleting now loses the
+reactive wiring. W3.4's RBAC keystone is upstream CONJECTURE.
