@@ -46,10 +46,17 @@ serde_json = "1"
 # (crate present at origin/main); R-2 (SQLAlchemy brick) NOT yet. The flip
 # stays gated on OGAR O-2 de-pinning its own ruff rev (source-alignment above);
 # flip = advance BOTH pins LOCKSTEP to `branch = "main"`, never one alone.
-ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
-ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
-ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
-ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", rev = "4860e7987aa0c9453f812bb0178962d1cba66df0", optional = true }
+# O-2 BLOCKER MEASURED (2026-07-06): a bump to OGAR main post-O-1 (318b46f2) +
+# ruff branch=claude/odoo-rs-transcode-lf8ya5 (OGAR's own pin source) FAILS —
+# that branch tip (684ba99) has ruff_spo_triplet::Field.not_null without the
+# ruff_python_spo update (E0063; fixed on ruff MAIN by #44, not on the branch).
+# So no unifiable pin set exists until OGAR de-pins to ruff main (O-2); the
+# F15/F16/F17 ogar-emit re-runs vs the enriched ActionDef are gated on that.
+# O-2 MERGED (OGAR #159, 2026-07-06): gate OPEN — both pins flipped to branch="main" below.
+ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
+ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
+ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
+ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main", optional = true }
 
 [features]
 # Opt-in CLI (mirrors openproject-nexgen-rs#31's `--features cli` discipline).

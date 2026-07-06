@@ -108,7 +108,7 @@ The 5+3 sprint + 5+3 review ran to completion. Status against the plan:
 
 | Worker | Planned | Outcome |
 |---|---|---|
-| S1 | classid-in-DDL | ✅ `emit_via_ogar_annotated` — classid in the `DEFINE TABLE … COMMENT 'classid:0x00020202'` clause (review-corrected from a `--` header, which SurrealDB drops at parse time). + `class_ids` re-export. |
+| S1 | classid-in-DDL | ✅ `emit_via_ogar_annotated` — classid in the `DEFINE TABLE … COMMENT 'classid:0x02020002'` clause (review-corrected from a `--` header, which SurrealDB drops at parse time). + `class_ids` re-export. |
 | S2 | convergence-pin test | ✅ `tests/odoo_ogar_convergence.rs` — symbol-bound, full-surface, + negative pin (7 tests). |
 | S3 | CLI surface | ✅ `od-codegen --classids` — verified end-to-end on `data/slice_2.spo.ndjson`. |
 | S4 | docs | ✅ README "Pulling the canonical classid (OGAR)" section. |
@@ -159,7 +159,7 @@ per-class transpile substrate landed (OGAR #132, on main):
    relations.
 2. **The substrate owns both transpile legs.** Pull-in
    (`compile_graph_python::<OdooPort>` → `Vec<CompiledClass{class, facet}>`,
-   `account.move → 0x0002_0202`) and pull-back (`emit_rust`, the codegen
+   `account.move → 0x0202_0002`) and pull-back (`emit_rust`, the codegen
    reference; `ogar-adapter-surrealql` is the DDL reference). od-ontology's
    bespoke `triple` (input) + `surreal_ast` + native emit (output) are now
    *redundant* with the substrate, not load-bearing.
@@ -245,7 +245,7 @@ behind its `surrealdb-parser` *feature* (the parse-back leg only); the emit path
 (`emit_surrealql_ddl`) is `ogar-vocab` + a hand-written formatter, zero
 surrealdb. Stage B was verified **offline end-to-end**: od-ontology's full suite
 green via a `[path]`-override probe, and a real `account.move` source lowered to
-`DEFINE TABLE account_move … COMMENT 'commercial_document (classid:0x00020202)'`
+`DEFINE TABLE account_move … COMMENT 'commercial_document (classid:0x02020002)'`
 + `record<res_partner>` (Many2one) + `array<record<account_move_line>>`
 (One2many). Only the `surrealdb-parser` round-trip is genuinely CI-only.
 
@@ -422,7 +422,7 @@ Stage-C-gated native EMIT adapter?
   - `/// minted `facet` (identity: the render classid for codebook models).` (line 132)
   - `let render = cc.facet.facet_classid();` (line 155)
   - `// Codebook identity rides into the catalog COMMENT via the minted facet` (line 557)
-  - `assert_eq!(compiled[0].facet.facet_classid(), 0x0002_0202);` (line 594)
+  - `assert_eq!(compiled[0].facet.facet_classid(), 0x0202_0002);` (line 594)
 - The facet is the **V3 16-byte atom** (classid u32 + 12-byte payload) whose
   Odoo reading is the **3×(8:8:8:8) SPOG factoring** — L6 in lance-graph
   `.claude/v3/soa_layout/le-contract.md` §3, quoted verbatim:

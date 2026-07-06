@@ -72,7 +72,7 @@ pub fn emit_via_ogar(schema: &Schema) -> String {
 
 /// [`emit_via_ogar`] DDL, with each codebook table's canonical OGAR concept
 /// **name** + full render classid stamped into its `DEFINE TABLE …
-/// COMMENT 'commercial_document (classid:0x00020202)'` clause — so the shared
+/// COMMENT 'commercial_document (classid:0x02020002)'` clause — so the shared
 /// concept rides into `SurrealDB`'s own catalog metadata (queryable via
 /// `INFO FOR TABLE`), human-readable, not just the emitted `.surql` text. A
 /// `--` line-comment would evaporate at parse time; the `COMMENT` clause
@@ -159,7 +159,9 @@ pub fn emit_source_via_ogar(src: &str) -> String {
             // `class.description` as `… COMMENT '<desc>'`). The low u16 is the
             // shared concept the reverse map keys on.
             if render != 0 {
-                let concept = render as u16;
+                // canon-high (OGAR D-CLASSID-CANON-HIGH-FLIP, 2026-07-02):
+                // concept = HIGH u16, app render lens = LOW u16.
+                let concept = (render >> 16) as u16;
                 class.description = Some(match canonical_concept_name(concept) {
                     Some(name) => format!("{name} (classid:0x{render:08X})"),
                     None => format!("classid:0x{render:08X}"),
@@ -197,7 +199,7 @@ pub fn emit_source_via_ogar(src: &str) -> String {
 // planner↔ERP billable-hours pin).
 
 /// Odoo's APP-prefix — the high `u16` of the 32-bit *render* classid per OGAR's
-/// `APP-CLASS-CODEBOOK-LAYOUT` (`classid = APP(hi) ‖ concept(lo)`). The low
+/// `APP-CLASS-CODEBOOK-LAYOUT` (`classid = concept(hi) ‖ APP(lo) — canon-high per D-CLASSID-CANON-HIGH-FLIP`). The low
 /// `u16` is the shared cross-app concept (WHAT it is — RBAC + ontology); the
 /// high `u16` is the per-app render lens (WHOSE template). `0x0002` is Odoo's
 /// lens, so every Odoo-rendered id is `0x0002_<concept>`.
@@ -244,8 +246,8 @@ pub fn concept_classid(model: &str) -> Option<u16> {
 
 /// The full 32-bit **render** classid for an Odoo model: Odoo's APP prefix
 /// (`0x0002`) in the high `u16`, the shared canonical [`concept_classid`] in
-/// the low `u16`. `account_move` → `0x0002_0202`; `account_analytic_line` →
-/// `0x0002_0103`. `None` for an unaliased model.
+/// the low `u16`. `account_move` → `0x0202_0002`; `account_analytic_line` →
+/// `0x0103_0002`. `None` for an unaliased model.
 ///
 /// Composition is OGAR's canonical [`render_classid_for`] (OGAR #97), not a
 /// hand-rolled shift — the `(prefix << 16) | concept` layout lives in one
@@ -460,9 +462,9 @@ mod tests {
     #[test]
     fn render_classid_stamps_odoo_app_prefix() {
         // 0x0002 (Odoo render lens) ‖ low concept.
-        assert_eq!(render_classid("account_move"), Some(0x0002_0202));
-        assert_eq!(render_classid("account_analytic_line"), Some(0x0002_0103));
-        assert_eq!(render_classid("res_partner"), Some(0x0002_0204));
+        assert_eq!(render_classid("account_move"), Some(0x0202_0002));
+        assert_eq!(render_classid("account_analytic_line"), Some(0x0103_0002));
+        assert_eq!(render_classid("res_partner"), Some(0x0204_0002));
         assert_eq!(render_classid("ir_cron"), None);
         assert_eq!(ODOO_APP_PREFIX, 0x0002);
     }
@@ -503,11 +505,11 @@ mod tests {
         };
         let ddl = emit_via_ogar_annotated(&schema);
         // Codebook hit: account_move carries the canonical concept NAME +
-        // render classid 0x0002_0202 in a catalog COMMENT (single-quoted
+        // render classid 0x0202_0002 in a catalog COMMENT (single-quoted
         // SurrealQL literal), so it survives SurrealDB ingestion rather than
         // evaporating as a `--` line. The name comes from OGAR's reverse map.
         assert!(
-            ddl.contains("COMMENT 'commercial_document (classid:0x00020202)'"),
+            ddl.contains("COMMENT 'commercial_document (classid:0x02020002)'"),
             "account_move must carry its concept name + classid in a COMMENT clause; got:\n{ddl}"
         );
         // Codebook miss: ir_cron stays unstamped — exactly one classid clause.
@@ -555,9 +557,9 @@ class AccountMove(models.Model):
 "#;
         let ddl = emit_source_via_ogar(SRC);
         // Codebook identity rides into the catalog COMMENT via the minted facet
-        // + OGAR's reverse map (account.move -> COMMERCIAL_DOCUMENT 0x0002_0202).
+        // + OGAR's reverse map (account.move -> COMMERCIAL_DOCUMENT 0x0202_0002).
         assert!(
-            ddl.contains("COMMENT 'commercial_document (classid:0x00020202)'"),
+            ddl.contains("COMMENT 'commercial_document (classid:0x02020002)'"),
             "missing annotated COMMENT; got:\n{ddl}"
         );
         assert!(
@@ -591,6 +593,6 @@ class AccountMove(models.Model):
             "from odoo import models, fields\n\n\nclass AM(models.Model):\n    _name = 'account.move'\n    name = fields.Char()\n",
         );
         assert_eq!(compiled.len(), 1);
-        assert_eq!(compiled[0].facet.facet_classid(), 0x0002_0202);
+        assert_eq!(compiled[0].facet.facet_classid(), 0x0202_0002);
     }
 }

@@ -69,8 +69,8 @@ fn render_classid_stamps_odoo_lens_over_concept() {
     // render_classid encodes (odoo_lens << 16) | concept_classid.
     // The high u16 (0x0002) is the Odoo lens; the low u16 matches the
     // concept constant.  Both fields must be stable together.
-    assert_eq!(render_classid("account_analytic_line"), Some(0x0002_0103));
-    assert_eq!(render_classid("account_move"), Some(0x0002_0202));
+    assert_eq!(render_classid("account_analytic_line"), Some(0x0103_0002));
+    assert_eq!(render_classid("account_move"), Some(0x0202_0002));
 
     // Assert the lens independently so a bit-shift bug is caught separately
     // from a codebook-value bug.
