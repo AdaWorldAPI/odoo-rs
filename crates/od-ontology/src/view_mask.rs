@@ -66,8 +66,8 @@ pub struct ViewFields {
 
 /// The minted projection bits — the harvest artifact the widened
 /// lance-graph-contract `FieldMask` consumes. Deliberately NOT that type
-/// (`WideFieldMask`, lance-graph #651 — merged; wiring `MaskWords` onto it is the
-/// named follow-up once od-ontology gains the contract dep);
+/// (`WideFieldMask`, lance-graph #651/#653 — merged; wiring `MaskWords` onto
+/// it is now DONE — see [`mint_wide_mask`], behind the `fieldmask` feature);
 /// this is the wire-plain shape: LSB-first within each `u64`, word `i`
 /// covers universe indices `[64·i, 64·i + 64)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -377,5 +377,107 @@ mod tests {
     fn attr_value_respects_word_boundary() {
         let tag = r#"<field inverse_name="move_id" name="line_ids">"#;
         assert_eq!(attr_value(tag, "name"), Some("line_ids"));
+    }
+}
+
+// ── Wide-mask convergence (behind `fieldmask`) ──────────────────────────
+//
+// The follow-up named above: mint the contract-typed
+// `lance_graph_contract::WideFieldMask` directly from the same
+// universe/present inputs `mint_mask` already consumes, so the two minters
+// can never disagree on which fields count. `MaskWords` remains the
+// dep-free harvest artifact for callers who don't want the contract dep;
+// `mint_wide_mask` is the typed projection for callers who do.
+
+/// Positions in [`WideFieldMask`](lance_graph_contract::WideFieldMask) are
+/// `u8`, so a mask can address at most 256 fields. The doctrine (lance-graph
+/// #651 body) is explicit: capacity beyond 256 is headroom, never license —
+/// a class whose universe genuinely exceeds 256 fields is an OGAR-SOC
+/// (separation-of-concerns) split signal, not a case to widen the mask type
+/// further. [`mint_wide_mask`] refuses loudly rather than silently
+/// truncating or wrapping such a universe.
+#[cfg(feature = "fieldmask")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WideMaskError {
+    /// `universe.len()` exceeded the 256-position cap that `u8` positions
+    /// impose on [`WideFieldMask`](lance_graph_contract::WideFieldMask).
+    UniverseExceedsSocCap {
+        /// The offending universe size.
+        fields: usize,
+    },
+}
+
+#[cfg(feature = "fieldmask")]
+impl std::fmt::Display for WideMaskError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UniverseExceedsSocCap { fields } => write!(
+                f,
+                "universe of {fields} fields exceeds the 256-field WideFieldMask cap \
+                 (u8 positions) — this is an OGAR-SOC split signal, not a mask to widen further"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "fieldmask")]
+impl std::error::Error for WideMaskError {}
+
+/// Mint the projection as a contract-typed
+/// [`WideFieldMask`](lance_graph_contract::WideFieldMask): bit `i` is set iff
+/// `universe[i]` ∈ `present` — the exact same membership rule
+/// [`mint_mask`] uses, so the two minters can never disagree on which fields
+/// count. Positions are the sorted-universe index (`u8`), mirroring
+/// [`MaskWords`]'s "word `i` covers universe indices `[64·i, 64·i + 64)`"
+/// convention: bit N in either type names the same logical field N.
+///
+/// # Errors
+///
+/// Returns [`WideMaskError::UniverseExceedsSocCap`] if `universe.len() > 256`
+/// — `WideFieldMask` positions are `u8`, so a larger universe cannot be
+/// addressed at all. This is a loud refusal, never a silent drop.
+#[cfg(feature = "fieldmask")]
+pub fn mint_wide_mask(
+    universe: &[String],
+    present: &[String],
+) -> Result<lance_graph_contract::WideFieldMask, WideMaskError> {
+    if universe.len() > 256 {
+        return Err(WideMaskError::UniverseExceedsSocCap {
+            fields: universe.len(),
+        });
+    }
+    let present_set: BTreeSet<&str> = present.iter().map(String::as_str).collect();
+    #[allow(clippy::cast_possible_truncation)] // guarded: universe.len() <= 256 above
+    let positions: Vec<u8> = universe
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| present_set.contains(field.as_str()))
+        .map(|(i, _)| i as u8)
+        .collect();
+    Ok(lance_graph_contract::WideFieldMask::from_positions(&positions))
+}
+
+#[cfg(all(test, feature = "fieldmask"))]
+#[allow(clippy::cast_possible_truncation)] // bounded test fixtures, universe < 256
+mod fieldmask_tests {
+    use super::*;
+
+    #[test]
+    fn wide_mask_rejects_universe_over_256() {
+        let universe: Vec<String> = (0..257).map(|i| format!("f{i:03}")).collect();
+        let err = mint_wide_mask(&universe, &[]).unwrap_err();
+        assert_eq!(err, WideMaskError::UniverseExceedsSocCap { fields: 257 });
+    }
+
+    #[test]
+    fn wide_mask_agrees_with_mask_words() {
+        let universe: Vec<String> = (0..70).map(|i| format!("f{i:02}")).collect();
+        let present = vec!["f00".to_string(), "f63".to_string(), "f69".to_string()];
+        let words = mint_mask(&universe, &present);
+        let wide = mint_wide_mask(&universe, &present).expect("universe within cap");
+        assert_eq!(wide.count(), words.popcount());
+        for i in 0..universe.len() {
+            assert_eq!(wide.has(i as u8), words.is_set(i));
+        }
     }
 }
