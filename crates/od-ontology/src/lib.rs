@@ -50,6 +50,7 @@
 mod alignment;
 mod emit;
 mod inheritance;
+mod mro;
 #[cfg(feature = "ogar-emit")]
 mod ogar_actions;
 #[cfg(feature = "ogar-emit")]
@@ -58,6 +59,7 @@ mod recompute_dag;
 mod relations;
 mod surreal_ast;
 mod triple;
+mod view_mask;
 
 #[cfg(feature = "ogar-emit")]
 pub use ogar_bridge::{
@@ -85,6 +87,8 @@ pub use alignment::{
 };
 pub use emit::corpus_to_schema;
 pub use inheritance::InheritanceMap;
+pub use mro::{Mro, MroError};
+pub use view_mask::{extract_view_fields, field_universe, mint_mask, MaskWords, ViewFields};
 pub use recompute_dag::{MethodId, MethodKind, RecomputeDag};
 pub use relations::{Relation, RelationMap, RelationParseError};
 pub use surreal_ast::{
