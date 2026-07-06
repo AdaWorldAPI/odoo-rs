@@ -13,7 +13,7 @@
 //! its fields into this-model fields vs comodel `relation_hops`, and mints
 //! the projection against the slice_2 corpus's `account_move` field
 //! universe as plain LSB-first `Vec<u64>` bit-words (`MaskWords` — the
-//! harvest artifact the in-flight `claude/fieldmask-wide` widening
+//! harvest artifact the `WideFieldMask` widening (lance-graph #651, merged)
 //! consumes; deliberately NOT the contract type).
 //!
 //! # The >64 seam

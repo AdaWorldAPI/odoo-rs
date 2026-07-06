@@ -11,7 +11,8 @@
 //! bit-words.
 //!
 //! `account.move` carries well over 64 fields, which is WHY the lance-graph
-//! `FieldMask` >64-bit widening is in flight (branch `claude/fieldmask-wide`).
+//! `FieldMask` >64 ceiling is lifted by `WideFieldMask` (lance-graph #651, MERGED
+//! 2026-07-06): `Repr::Small(u64)`/`Repr::Wide(Box<[u64]>)`, bit N = logical field N.
 //! [`MaskWords`] is deliberately **NOT** that contract type — it is the
 //! harvest-side artifact the widened `FieldMask` will consume: plain
 //! `Vec<u64>` bit-words, LSB-first within each word, word `i` covering
@@ -65,7 +66,8 @@ pub struct ViewFields {
 
 /// The minted projection bits — the harvest artifact the widened
 /// lance-graph-contract `FieldMask` consumes. Deliberately NOT that type
-/// (the >64-bit widening is in flight upstream on `claude/fieldmask-wide`);
+/// (`WideFieldMask`, lance-graph #651 — merged; wiring `MaskWords` onto it is the
+/// named follow-up once od-ontology gains the contract dep);
 /// this is the wire-plain shape: LSB-first within each `u64`, word `i`
 /// covers universe indices `[64·i, 64·i + 64)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
