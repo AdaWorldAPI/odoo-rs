@@ -30,30 +30,16 @@ serde_json = "1"
 #
 # SOURCE-ALIGNMENT (Codex P1 on #20): `ruff_python_spo` and OGAR's
 # `ogar-from-ruff` both depend on `ruff_spo_triplet` — the `ModelGraph` type.
-# They MUST resolve to the SAME cargo source, or the types won't unify (the
-# graph `extract_from_source` returns wouldn't be accepted by
-# `compile_graph_python`). So the pins are deliberately mutually-consistent:
-#   * OGAR `rev = 7d0dca2` — current OGAR main; carries #132 `ogar-from-ruff` +
-#     the Stage-A `array<record<…>>` emitter (supersedes the pre-#132 597ecb12).
-#   * `ruff_python_spo` `rev = 4860e79` — the EXACT ruff rev OGAR 7d0dca2's
-#     `ogar-from-ruff` pins for `ruff_spo_triplet`, so the graph has ONE source.
-# A bump is a deliberate lockstep step (advance BOTH to the new OGAR main + the
-# ruff rev that main's `ogar-from-ruff` pins), per od-ontology's rev-pin
-# convention. The `ogar-adapter-surrealql` EMIT path is dep-light (zero
-# surrealdb — that's gated behind its `surrealdb-parser` feature, off here), so
-# the convergence builds offline. Stage B adds the `source -> ruff ->
-# compile_graph -> shared emit` path ALONGSIDE the native one; W3.3 stays gated.
-# DEP-FLIP READINESS (2026-07-06): R-1 (`ruff_python_spo`) IS on ruff main
-# (crate present at origin/main); R-2 (SQLAlchemy brick) NOT yet. The flip
-# stays gated on OGAR O-2 de-pinning its own ruff rev (source-alignment above);
-# flip = advance BOTH pins LOCKSTEP to `branch = "main"`, never one alone.
-# O-2 BLOCKER MEASURED (2026-07-06): a bump to OGAR main post-O-1 (318b46f2) +
-# ruff branch=claude/odoo-rs-transcode-lf8ya5 (OGAR's own pin source) FAILS —
-# that branch tip (684ba99) has ruff_spo_triplet::Field.not_null without the
-# ruff_python_spo update (E0063; fixed on ruff MAIN by #44, not on the branch).
-# So no unifiable pin set exists until OGAR de-pins to ruff main (O-2); the
-# F15/F16/F17 ogar-emit re-runs vs the enriched ActionDef are gated on that.
-# O-2 MERGED (OGAR #159, 2026-07-06): gate OPEN — both pins flipped to branch="main" below.
+# They MUST resolve to the SAME cargo source or the types won't unify. Both
+# sides float on `branch = "main"`, so the sources unify by construction.
+#
+# D-NEVER-PIN-BUMP (operator ruling, OGAR #166, 2026-07-06): "wir machen
+# NIEMALS pin bump." Every cross-repo dep floats on branch = "main" — an
+# upstream change breaking this build loudly and immediately is the FEATURE
+# (surface + fix-forward within minutes), never a defect to pin away. Do not
+# reintroduce rev pins here. (Historical rev-pin/lockstep narration removed;
+# the O-2 arc that got us to float-on-main lives in the git history of this
+# block and in docs/ODOO-OGAR-MIGRATION-SPRINT.md.)
 ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main" }
 ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main" }
 ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main" }
