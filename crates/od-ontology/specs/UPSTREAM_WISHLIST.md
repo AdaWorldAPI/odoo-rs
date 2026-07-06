@@ -694,3 +694,40 @@ side: emit-then-reparse should round-trip the projection's intent.
 **Not a request on the design session** — listed so a future
 od-codegen contributor knows the C++ side has a working pattern to
 copy from.
+
+## 2026-06-30 — recipe-bitmask probe surfaced two crate-path gaps
+
+> Filed by `tests/recipe_redundancy_probe.rs` (OGAR `D-RECIPE-BITMASK` /
+> `PROBE-OGAR-AR-RECIPE-COLLAPSE`). The probe measures how much of Odoo's
+> lifted behavioural arm collapses to the shared ActiveRecord-lifecycle
+> recipe + a per-class override (OGAR = Open Graph **Active Record**, so the
+> recipe IS the AR protocol). Two capture gaps cap the measurable collapse.
+
+### A · `ruff_python_spo` (the live-source CRATE path) drops `_inherit`  · P2
+
+The **corpus** (`spo_enrich.py`) already emits `inherits_from` (resolved via
+lance-graph #526/#527 — slice_2 carries 8 edges). But the **crate** path that
+`od_ontology::compile_source` uses — `ruff_python_spo::extract_from_source` →
+`build_graph` — discards `RawClass.inherits` via `..Default::default()`, so a
+**live-source** transpile sees no MRO at all. The two Odoo extraction paths
+disagree on inheritance.
+
+- **Ask:** lift `RawClass.inherits` into the `Model` (emit `inherits_from`,
+  the same wire shape the corpus extractor and `ruff_ruby_spo` already use).
+  Low risk — the corpus extractor proves the shape; this just brings the crate
+  path to parity.
+- **Why it matters for the recipe-bitmask:** inheritance is the biggest
+  collapse lever (inherited-default = clear bit). Without it on the live-source
+  path, the override-vs-inherit mask can't be computed from source — only the
+  shape/payload redundancy can (what the probe measures today, an upper bound).
+
+### B · no method-body hash / decorator-type capture  · P3
+
+The strict "redundant = content-hash-equal-to-default" test (lossless-DO §1)
+needs **method-body identity**; today only `@api.depends` args + `reads` /
+`raises` facts are captured (and only `@api.depends` among decorators — not
+`@api.constrains` / `@api.onchange` / `@api.model` as distinct types). So the
+probe can dedup on *shape + dependency-set*, not on *body*. A per-method body
+hash (or a fuller decorator set) would let the probe measure TRUE behavioural
+dedup, tightening the upper bound toward the real leftover. Optional — body
+dedup can only LOWER the measured leftover, so its absence is conservative.
