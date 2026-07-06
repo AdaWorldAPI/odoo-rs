@@ -42,6 +42,10 @@ serde_json = "1"
 # surrealdb — that's gated behind its `surrealdb-parser` feature, off here), so
 # the convergence builds offline. Stage B adds the `source -> ruff ->
 # compile_graph -> shared emit` path ALONGSIDE the native one; W3.3 stays gated.
+# DEP-FLIP READINESS (2026-07-06): R-1 (`ruff_python_spo`) IS on ruff main
+# (crate present at origin/main); R-2 (SQLAlchemy brick) NOT yet. The flip
+# stays gated on OGAR O-2 de-pinning its own ruff rev (source-alignment above);
+# flip = advance BOTH pins LOCKSTEP to `branch = "main"`, never one alone.
 ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
 ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
 ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }

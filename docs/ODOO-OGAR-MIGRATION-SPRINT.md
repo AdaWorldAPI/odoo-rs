@@ -328,3 +328,108 @@ concrete Ruby probe spec:
 `openproject-nexgen-rs/.claude/handovers/`. Canon home for the conjecture +
 falsifier registration: OGAR `D-RECIPE-BITMASK` / `E-RECIPE-BITMASK` /
 `PROBE-OGAR-AR-RECIPE-COLLAPSE`.
+
+---
+
+## Session 2026-07-06 — F17/F1/view-mask lanes on main (convergence branch retired)
+
+### (a) Operator rulings recap (2026-07-06)
+
+- **Everything on main.** The separate convergence branch is retired; the F17/F1/view-mask lanes land on main.
+- **V3 sink-in substrate is the carrier**, with the 12-slot factorings: 6×(8:8) rails / 4×(8:8:8) SPO / 3×(8:8:8:8) SPOG = **the ODOO factoring**.
+- **PostgreSQL = system-of-record**, with DDL generated from ClassView via the in-flight `ogar-adapter-postgres-ddl`.
+- **lance-graph = zero-copy read hot path**, never the sole booking store.
+- **moka cache PG-side only.**
+- **askama↔jinja 1:1** off the same ClassView×FieldMask.
+
+### (b) F15/F16 probes + manifest ported from the retiring branch
+
+`tests/recipe_redundancy_probe.rs` (F15) and `tests/recipe_chaining_collapse.rs`
+(F16) + the full manifest were ported from the retiring convergence branch and
+re-verified green on this branch. Their measured numbers (F15: 45.7% collapse /
+54.3% leftover on slice_2; F16: 21.0% collapse / 22.7% behavioural over 388
+classes / 166 edges / 3328 methods) are unchanged and remain recorded in the
+OGAR INTEGRATION-MAP F15/F16 rows.
+
+### (c) F17 Odoo control-leg measurement (2026-07-06)
+
+Probe: `crates/od-ontology/tests/body_triage_probe.rs` (default build, slice_2
+corpus, run verified green; headline numbers pinned as drift-fuses in the probe).
+
+```
+lifecycle hooks 393 · verb-classes: guard-pure 44, compute-pure 298,
+  self-feedback 30, write+raise 2, read-only 15, no-facts 4
+headline (behavioural arm = guards + computes: 357 hooks, 354 resolved):
+  PASS (accidentally imperative, order-free recoverable): 336 (94.9%)
+  FAIL (order-dependent tail): 18 (5.1%) — self-feedback (read-modify-write
+    inside one hook; conservative, includes @api.depends extractor artifacts,
+    so true tail <= measured) + write+raise (partial-write escape order)
+  unresolved (no facts captured, excluded): 3
+context: onchange 15/17 resolved FAIL — cooperative loops are the genuinely
+  order-dependent shape, as predicted
+cross-hook order NOT counted: recompute-DAG Kahn-orderability re-asserted
+  inside the probe
+method: static order-signature from harvested facts — writes = inverted
+  emitted_by (Odoo's declarative compute= target; the F17 ledger note "Python
+  frontend leaves writes/calls empty" is exactly why the declarative target is
+  used), reads = reads_field, raise = raises
+```
+
+Ledgered in OGAR: INTEGRATION-MAP F17 row (Odoo control-leg RUN annotation,
+amended in place) + EPIPHANIES `E-BODY-TRIAGE-ODOO-CONTROL-1`. The Odoo CONTROL
+leg is measured — 94.9% recoverable, consistent with "already declarative";
+`D-ACCIDENTAL-IMPERATIVE` stays [H] until the Rails TEST leg
+(`before_*`/`after_*` via `ruff_ruby_spo` writes/calls) runs.
+
+### (d) Dep-flip readiness (as of 2026-07-06)
+
+- **R-1 (`ruff_python_spo`) IS on ruff main** — verified this session:
+  `git ls-tree origin/main crates/` in the ruff checkout shows
+  `crates/ruff_python_spo` (alongside `ruff_spo_triplet` and
+  `ruff_spo_address`).
+- **R-2 (SQLAlchemy brick) NOT yet** — no SQLAlchemy support present in
+  `ruff_python_spo` / `ruff_spo_triplet` on ruff origin/main (verified via
+  `git grep -i sqlalchemy origin/main` over both crates: zero hits).
+- **The actual flip stays LOCKSTEP-GATED on OGAR O-2** (source-alignment):
+  od-ontology's `ruff_python_spo` must resolve `ruff_spo_triplet` to the SAME
+  cargo source as OGAR's `ogar-from-ruff`, or the `ModelGraph` types won't
+  unify — flipping odoo-rs alone breaks type unification. The flip = advance
+  BOTH pins lockstep to `branch = "main"` once OGAR O-2 de-pins.
+
+### (e) SPOG-consumption audit verdict (read-only, this session)
+
+**Question:** does anything in odoo-rs consume the SurrealQL AST as a data
+CARRIER (ontology state built ON the AST types), rather than as the
+Stage-C-gated native EMIT adapter?
+
+**Verdict: CLEAN — no leak beyond the adapter.** Findings:
+
+- `surreal_ast` / `ToSql` usage sites: `src/surreal_ast.rs` (the AST + `ToSql`
+  impls), `src/emit.rs` (the native lowering), `src/lib.rs` (exports), the
+  `cli`-gated `src/bin/od_codegen.rs`, examples, and tests — all on the native
+  EMIT path, which is exactly the W3 transition state
+  `specs/SURREAL-AST-TRAP.md` documents (Stage-C delete gated on the shared
+  emitter covering `DEFINE FUNCTION`/`EVENT`/`INDEX` + computed `VALUE`).
+- One nuance, named honestly: `src/ogar_bridge.rs:54` imports
+  `crate::surreal_ast::{FieldDefinition, Kind, Schema, TableDefinition}` — but
+  as lowering INPUT (the bespoke `Schema` catalog mirror, which is *colocated*
+  in `surreal_ast.rs`, lowered onto `ogar_vocab::Class`), not as a carrier for
+  ontology state; `ToSql` appears in `ogar_bridge.rs` only in doc comments. No
+  module builds ontology state ON the DDL statement nodes. The carriers are
+  `Schema` / `ModelGraph` / `CompiledClass`.
+- The ogar-emit path (`src/ogar_bridge.rs`) consumes `CompiledClass{class,
+  facet}`. Facet lines, verbatim:
+  - `/// minted `facet` (identity: the render classid for codebook models).` (line 132)
+  - `let render = cc.facet.facet_classid();` (line 155)
+  - `// Codebook identity rides into the catalog COMMENT via the minted facet` (line 557)
+  - `assert_eq!(compiled[0].facet.facet_classid(), 0x0002_0202);` (line 594)
+- The facet is the **V3 16-byte atom** (classid u32 + 12-byte payload) whose
+  Odoo reading is the **3×(8:8:8:8) SPOG factoring** — L6 in lance-graph
+  `.claude/v3/soa_layout/le-contract.md` §3, quoted verbatim:
+
+  > `| L6 | quads | 3 × (8:8:8:8) | odoo-shaped relations | **[H] semantics open** — operator marked "odoo ?"; do not implement semantics before a ruling |`
+
+  Note the row's former **[H] semantics open** mark ("odoo ?"): the operator
+  briefing 2026-07-06 supplies the SPOG ruling (3×(8:8:8:8) SPOG = the ODOO
+  factoring, per (a) above). The le-contract table itself is lance-graph-side
+  canon and is not edited from here.
