@@ -66,18 +66,19 @@ fn res_partner_pins_billing_party() {
 
 #[test]
 fn render_classid_stamps_odoo_lens_over_concept() {
-    // render_classid encodes (odoo_lens << 16) | concept_classid.
-    // The high u16 (0x0002) is the Odoo lens; the low u16 matches the
-    // concept constant.  Both fields must be stable together.
+    // Canon-high (OGAR D-CLASSID-CANON-HIGH-FLIP, 2026-07-02): render_classid
+    // encodes (concept_classid << 16) | odoo_lens. The HIGH u16 is the shared
+    // concept (cross-app RBAC + ontology); the LOW u16 (0x0002) is the Odoo
+    // render lens. Both fields must be stable together.
     assert_eq!(render_classid("account_analytic_line"), Some(0x0103_0002));
     assert_eq!(render_classid("account_move"), Some(0x0202_0002));
 
     // Assert the lens independently so a bit-shift bug is caught separately
-    // from a codebook-value bug.
+    // from a codebook-value bug — the lens lives in the LOW u16 under canon-high.
     assert_eq!(
-        render_classid("account_move").map(|id| id >> 16),
+        render_classid("account_move").map(|id| id & 0xFFFF),
         Some(0x0002),
-        "high u16 of render_classid must be the Odoo lens (0x0002)",
+        "low u16 of render_classid must be the Odoo lens (0x0002)",
     );
 }
 
