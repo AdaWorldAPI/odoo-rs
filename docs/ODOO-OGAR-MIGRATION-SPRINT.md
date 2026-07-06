@@ -433,3 +433,21 @@ Stage-C-gated native EMIT adapter?
   briefing 2026-07-06 supplies the SPOG ruling (3×(8:8:8:8) SPOG = the ODOO
   factoring, per (a) above). The le-contract table itself is lance-graph-side
   canon and is not edited from here.
+
+### F1 RUN result (landed after the session section above was written)
+
+`tests/delegation_inherit_equivalence.rs` (3 tests green, drift-fused): the
+**diamond falsification fires** — C3-over-declaration-order picks C (matches
+CPython `__mro__`, pinned in-test), naive parent-first DFS picks A. Corpus
+sweep: 388 classes, 3986 resolution points, 0 divergences (honestly scoped:
+all 53 multi-base children declare alphabetically, so the corpus cannot
+witness order-sensitivity; the diamond carries the falsification).
+
+**NEW FINDING for the OGAR ledger (blocked here — OGAR read-only this
+session):** 3 manifest hierarchies (`discuss_channel`, `product_product`,
+`product_template`) are genuinely **C3-INCONSISTENT** (`mail_thread`
+declared before a base whose MRO already contains it). CPython refuses this
+shape; naive DFS silently resolves it — a second divergence mode. Lands in
+the F1 row's named fix: **`Class.mixins` ORDERING must carry the
+linearization, and a validator must reject inconsistent assemblies loudly.**
+D‑DELEG‑INHERIT `[H]→[G]` needs that mixins-ordering fix upstream (O-1-gated).
