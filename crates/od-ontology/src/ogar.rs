@@ -65,6 +65,7 @@ pub fn schema_to_classes(schema: &Schema) -> Vec<Class> {
 /// emitter (the OGAR-canonical path), parallel to [`Schema::to_sql`].
 ///
 /// [`Schema::to_sql`]: crate::ToSql::to_sql
+#[deprecated(since = "0.5.0", note = "SurrealQL is deprecated (operator ruling 2026-07-06): OGAR V3 is the transpile substrate, lance-graph V3 the database. Consume `compile_source` / `schema_to_classes` and sink the classes; DDL for the PostgreSQL system-of-record comes from the ClassView via ogar-adapter-postgres-ddl.")]
 #[must_use]
 pub fn emit_via_ogar(schema: &Schema) -> String {
     ogar_adapter_surrealql::emit_surrealql_ddl(&schema_to_classes(schema))
@@ -84,6 +85,7 @@ pub fn emit_via_ogar(schema: &Schema) -> String {
 /// [`ogar_vocab::canonical_concept_name`] — OGAR's `id → name` reverse map
 /// (the `PROBE-OGAR-ID-TO-CONCEPT-NAME` capability, OGAR #98) — never
 /// re-derived or copied locally, per the Core-First doctrine.
+#[deprecated(since = "0.5.0", note = "SurrealQL is deprecated (operator ruling 2026-07-06). The classid+concept identity now rides the V3 facet (`CompiledClass.facet`), not a DDL COMMENT clause.")]
 #[must_use]
 pub fn emit_via_ogar_annotated(schema: &Schema) -> String {
     let classes: Vec<Class> = schema
@@ -147,6 +149,7 @@ pub fn compile_source(src: &str) -> Vec<CompiledClass> {
 /// lifecycle/behaviour, per the SurrealQL-AST-trap rule). The concept name comes
 /// from [`canonical_concept_name`] (OGAR's `id -> name` reverse map), never
 /// re-derived locally.
+#[deprecated(since = "0.5.0", note = "SurrealQL is deprecated (operator ruling 2026-07-06). Use `compile_source` — the `Vec<CompiledClass>` IS the product; storage is the lance-graph V3 substrate.")]
 #[must_use]
 pub fn emit_source_via_ogar(src: &str) -> String {
     let classes: Vec<Class> = compile_source(src)

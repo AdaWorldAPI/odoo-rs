@@ -62,6 +62,7 @@ mod surreal_ast;
 mod triple;
 mod view_mask;
 
+#[allow(deprecated)] // legacy SurrealQL emits stay exported for the parity witness
 pub use ogar::{
     compile_source, concept_classid, emit_source_via_ogar, emit_via_ogar, emit_via_ogar_annotated,
     render_classid, schema_classids, schema_to_classes, ODOO_APP_PREFIX,
@@ -69,6 +70,7 @@ pub use ogar::{
 
 /// Behavioral-arm lowering — Odoo's reactive lifecycle → `ogar_vocab::ActionDef`
 /// (the sibling of [`schema_to_classes`]). See `specs/W3-BEHAVIORAL-ARM-SCOPE.md`.
+#[allow(deprecated)] // corpus DO-arm stays exported as the kausal-parity witness
 pub use ogar_actions::{corpus_action_rows, corpus_to_actions};
 
 /// Re-export the canonical OGAR codebook constants (e.g.
