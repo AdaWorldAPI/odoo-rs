@@ -165,7 +165,7 @@ codebook (OGAR #94). This is the "pull OGAR via class" consumer-migration target
 // feature = "ogar-emit"
 concept_classid("account_move")          // Some(0x0202)  COMMERCIAL_DOCUMENT
 concept_classid("account_analytic_line") // Some(0x0103)  BILLABLE_WORK_ENTRY
-render_classid("account_move")           // Some(0x0002_0202)  APP 0x0002 (Odoo lens) ‖ concept
+render_classid("account_move")           // Some(0x0202_0002)  APP 0x0002 (Odoo lens) ‖ concept
 schema_classids(&schema)                 // Vec<(table, Option<u16>)>
 ```
 
@@ -182,7 +182,7 @@ so it rides into SurrealDB's own catalog (queryable via `INFO FOR TABLE`),
 human-readable, not just the `.surql` text:
 
 ```surql
-DEFINE TABLE account_move SCHEMAFULL COMMENT 'commercial_document (classid:0x00020202)';
+DEFINE TABLE account_move SCHEMAFULL COMMENT 'commercial_document (classid:0x02020002)';
 ```
 
 The concept name comes from `ogar_vocab::canonical_concept_name` (OGAR #98's

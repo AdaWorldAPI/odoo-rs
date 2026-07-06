@@ -52,10 +52,11 @@ serde_json = "1"
 # ruff_python_spo update (E0063; fixed on ruff MAIN by #44, not on the branch).
 # So no unifiable pin set exists until OGAR de-pins to ruff main (O-2); the
 # F15/F16/F17 ogar-emit re-runs vs the enriched ActionDef are gated on that.
-ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
-ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
-ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", rev = "7d0dca200472e133416fb961c065570d5159effa", optional = true }
-ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", rev = "4860e7987aa0c9453f812bb0178962d1cba66df0", optional = true }
+# O-2 MERGED (OGAR #159, 2026-07-06): gate OPEN — both pins flipped to branch="main" below.
+ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
+ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
+ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
+ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main", optional = true }
 
 [features]
 # Opt-in CLI (mirrors openproject-nexgen-rs#31's `--features cli` discipline).
