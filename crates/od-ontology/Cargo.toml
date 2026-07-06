@@ -58,6 +58,12 @@ ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", branch =
 ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main", optional = true }
 ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main", optional = true }
 
+# lance-graph-contract — the zero-dep OGAR contract crate. Pulled ONLY under
+# the `fieldmask` feature, to mint `WideFieldMask` (lance-graph #651/#653,
+# MERGED) from view_mask's harvest-side `MaskWords`. The default build stays
+# serde-only; lib consumers who don't ask for `fieldmask` pay zero cost.
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main", optional = true }
+
 [features]
 # Opt-in CLI (mirrors openproject-nexgen-rs#31's `--features cli` discipline).
 # Lib consumers without the feature pay zero extra cost; the bin + its tests
@@ -74,6 +80,12 @@ ogar-emit = [
     "dep:ogar-from-ruff",
     "dep:ruff_python_spo",
 ]
+# Wide-field-mask convergence: mint `lance_graph_contract::WideFieldMask` from
+# view_mask's `MaskWords` harvest artifact (the named follow-up documented in
+# view_mask.rs's module docs, now unblocked by lance-graph #651/#653). Lib
+# consumers without the feature pay zero cost; `view_mask::mint_wide_mask` +
+# its parity test only compile under this flag.
+fieldmask = ["dep:lance-graph-contract"]
 
 [[bin]]
 name = "od-codegen"
@@ -87,6 +99,10 @@ required-features = ["cli"]
 [[example]]
 name = "classid_pull"
 required-features = ["ogar-emit"]
+
+[[test]]
+name = "wide_mask_parity"
+required-features = ["fieldmask"]
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }

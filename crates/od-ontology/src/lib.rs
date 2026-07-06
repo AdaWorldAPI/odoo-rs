@@ -89,6 +89,10 @@ pub use emit::corpus_to_schema;
 pub use inheritance::InheritanceMap;
 pub use mro::{Mro, MroError};
 pub use view_mask::{extract_view_fields, field_universe, mint_mask, MaskWords, ViewFields};
+/// Wide-mask convergence — mint `lance_graph_contract::WideFieldMask`
+/// straight from the view-stratum harvest. See `view_mask`'s module docs.
+#[cfg(feature = "fieldmask")]
+pub use view_mask::{mint_wide_mask, WideMaskError};
 pub use recompute_dag::{MethodId, MethodKind, RecomputeDag};
 pub use relations::{Relation, RelationMap, RelationParseError};
 pub use surreal_ast::{
