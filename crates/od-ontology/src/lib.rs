@@ -50,6 +50,7 @@
 mod alignment;
 mod emit;
 mod inheritance;
+mod mro;
 #[cfg(feature = "ogar-emit")]
 mod ogar_actions;
 #[cfg(feature = "ogar-emit")]
@@ -85,6 +86,7 @@ pub use alignment::{
 };
 pub use emit::corpus_to_schema;
 pub use inheritance::InheritanceMap;
+pub use mro::{Mro, MroError};
 pub use recompute_dag::{MethodId, MethodKind, RecomputeDag};
 pub use relations::{Relation, RelationMap, RelationParseError};
 pub use surreal_ast::{
