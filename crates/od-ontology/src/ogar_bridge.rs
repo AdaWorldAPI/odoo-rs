@@ -137,7 +137,7 @@ pub fn compile_source(src: &str) -> Vec<CompiledClass> {
 
 /// Emit SurrealQL DDL for Odoo model *source* through the shared OGAR substrate
 /// + `ogar-adapter-surrealql`, stamping each codebook table's canonical concept
-/// **name** + full render classid into its `DEFINE TABLE … COMMENT` clause.
+/// name and full render classid into its `DEFINE TABLE … COMMENT` clause.
 ///
 /// The substrate-input sibling of [`emit_via_ogar_annotated`] — which lowers the
 /// bespoke [`Schema`](crate::Schema); both converge on the same emitter, so the
