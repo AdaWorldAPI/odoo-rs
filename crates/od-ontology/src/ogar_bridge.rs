@@ -595,4 +595,55 @@ class AccountMove(models.Model):
         assert_eq!(compiled.len(), 1);
         assert_eq!(compiled[0].facet.facet_classid(), 0x0202_0002);
     }
+
+    /// AT-CONSUME (W3.3 delete gate, `docs/W3.3-DELETE-GATE-MATRIX.md`): the
+    /// DO-arm that OGAR #164 (AT-CARRY-1) put on `CompiledClass` is actually
+    /// consumed on this side — a live-source compile carries one `ActionDef`
+    /// per method with its body facts, and the lifecycle classification agrees
+    /// with the corpus-side mirror (`corpus_to_actions`'s prefix convention,
+    /// `MethodKind::classify`). Before #164 `compile_source` dropped the whole
+    /// behaviour arm; deleting the native fork would have lost the reactive
+    /// wiring with no consumer ever noticing.
+    #[test]
+    fn compile_source_carries_the_do_arm() {
+        let compiled = compile_source(concat!(
+            "from odoo import api, models, fields\n\n\n",
+            "class AM(models.Model):\n",
+            "    _name = 'account.move'\n",
+            "    amount_total = fields.Monetary(compute='_compute_amount')\n\n",
+            "    @api.depends('line_ids.balance')\n",
+            "    def _compute_amount(self):\n",
+            "        for move in self:\n",
+            "            move.amount_total = sum(move.line_ids.mapped('balance'))\n",
+        ));
+        assert_eq!(compiled.len(), 1);
+        let cc = &compiled[0];
+
+        // The DO-arm rides the compiled class (AT-CARRY-1 consumed).
+        assert_eq!(cc.actions.len(), 1, "one ActionDef per harvested method");
+        let act = &cc.actions[0];
+        assert_eq!(act.predicate, "_compute_amount");
+        // the frontend normalizes `_name = 'account.move'` to the table form
+        assert_eq!(act.object_class, "account_move");
+        assert!(
+            act.identity.ends_with("::action_def::_compute_amount"),
+            "identity carries the action-def address, got {}",
+            act.identity
+        );
+
+        // Classification parity with the corpus-side mirror: the carried
+        // predicate classifies as Compute under the same prefix convention
+        // `corpus_to_actions` uses — the two arms can never silently drift.
+        assert_eq!(
+            crate::MethodKind::classify(&act.predicate),
+            crate::MethodKind::Compute,
+            "carried DO-arm predicate must classify as the corpus arm would"
+        );
+
+        // The THINK arm still carries the reactive schema half alongside.
+        assert!(
+            !cc.class.computed_fields.is_empty(),
+            "computed_fields (THINK arm) and actions (DO arm) travel together"
+        );
+    }
 }
