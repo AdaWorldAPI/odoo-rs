@@ -154,8 +154,7 @@ fn main() {
 
     // ── 4. `--classids` — print table → OGAR render classid map ──
     if parsed.classids {
-        #[cfg(feature = "ogar-emit")]
-        {
+                {
             for table in &schema.tables {
                 match od_ontology::render_classid(&table.name) {
                     Some(id) => println!("{}\t0x{id:08X}", table.name),
@@ -164,20 +163,11 @@ fn main() {
             }
             return;
         }
-        #[cfg(not(feature = "ogar-emit"))]
-        {
-            eprintln!(
-                "error: --classids requires the `ogar-emit` feature \
-                 (rebuild: cargo build -p od-ontology --features cli,ogar-emit)"
-            );
-            process::exit(1);
-        }
     }
 
     // ── 4b. `--actions` — print the behavioral-arm lowering (ActionDef) ──
     if parsed.actions {
-        #[cfg(feature = "ogar-emit")]
-        {
+                {
             for (model, predicate, kind, detail) in od_ontology::corpus_action_rows(&triples) {
                 // Respect --focus: only the focused models, when given.
                 if !focus_refs.is_empty() && !focus_refs.iter().any(|&f| f == model) {
@@ -186,14 +176,6 @@ fn main() {
                 println!("{model}.{predicate}\t{kind}\t{detail}");
             }
             return;
-        }
-        #[cfg(not(feature = "ogar-emit"))]
-        {
-            eprintln!(
-                "error: --actions requires the `ogar-emit` feature \
-                 (rebuild: cargo build -p od-ontology --features cli,ogar-emit)"
-            );
-            process::exit(1);
         }
     }
 
@@ -366,10 +348,10 @@ OPTIONS:
                                 `surrealdb_core::syn::parse` and exits 2 on syntax error.
                                 Currently a no-op stub (warns and passes through).
     --classids                  Print the `table → canonical OGAR render classid (0xAABBCCDD)`
-                                map instead of DDL. Requires the `ogar-emit` feature.
+                                map instead of DDL.
     --actions                   Print the behavioral-arm lowering — one
                                 `model.method <TAB> kind <TAB> detail` row per ActionDef
-                                (kind = depends|guard). Respects --focus. Requires `ogar-emit`.
+                                (kind = depends|guard). Respects --focus.
     -h, --help                  Show this help.
 
 EXIT CODES (lance-graph#512 convention):
