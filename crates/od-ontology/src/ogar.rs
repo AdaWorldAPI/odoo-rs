@@ -649,4 +649,56 @@ class AccountMove(models.Model):
             "computed_fields (THINK arm) and actions (DO arm) travel together"
         );
     }
+
+    /// The foreign-consumer SDK (OGAR #177, `E-AR-DIRECT-SDK`): a
+    /// `CompiledClass` materializes to a native-language class in Python / C# /
+    /// Rust — no bridge, no serialization, the classid + typed fields ride
+    /// straight into the target language. This pins the **Odoo → SDK** path:
+    /// an Odoo model source lowered through the substrate emits a usable SDK
+    /// class in each language, so a Python or C# consumer of Odoo models needs
+    /// only the emitted dataclass, never SurrealQL (deprecated) or a bridge.
+    #[test]
+    fn odoo_source_materializes_to_the_foreign_consumer_sdk() {
+        use ogar_from_ruff::emit::{emit_csharp, emit_python, emit_rust};
+
+        let compiled = compile_source(concat!(
+            "from odoo import models, fields\n\n\n",
+            "class AM(models.Model):\n",
+            "    _name = 'account.move'\n",
+            "    name = fields.Char()\n",
+            "    partner_id = fields.Many2one('res.partner')\n",
+        ));
+        assert_eq!(compiled.len(), 1);
+        let cc = &compiled[0];
+
+        // Python SDK: an `@dataclass` carrying the canon-high classid and the
+        // typed fields (the association renders as a `ToOne[...]` relation).
+        let py = emit_python(cc);
+        assert!(py.contains("@dataclass"), "python SDK is a dataclass:\n{py}");
+        assert!(
+            py.contains("CLASSID: ClassVar[int] = 0x02020002"),
+            "python SDK carries the canon-high classid:\n{py}"
+        );
+        assert!(py.contains("name:"), "python SDK carries the scalar field:\n{py}");
+        assert!(
+            py.contains("partner_id:"),
+            "python SDK carries the association field:\n{py}"
+        );
+
+        // C# SDK: the same class materialized for the .NET consumer.
+        let cs = emit_csharp(cc);
+        assert!(
+            cs.contains("0x02020002"),
+            "c# SDK carries the canon-high classid:\n{cs}"
+        );
+
+        // Rust SDK: the sibling emitter — the materialized struct the Rust
+        // consumer would use (distinct from the lance-graph V3 row sink; this
+        // is the typed API surface, that is the storage row).
+        let rs = emit_rust(cc);
+        assert!(
+            rs.contains("struct") && rs.contains("0x02020002"),
+            "rust SDK materializes a struct with the classid:\n{rs}"
+        );
+    }
 }

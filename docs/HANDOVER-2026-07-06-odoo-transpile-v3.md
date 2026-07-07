@@ -126,6 +126,19 @@ The model — everything in ONE binary, nothing serializes:
 - Drift arms (test-time bang in the consumer's binary): `UnknownClassid` /
   `NoCapabilitiesFor` / `UnexpectedConsumer` / `Uncovered` / `Undeclared`.
 
+### UPDATE 2026-07-07b — OGAR #177 foreign-consumer SDK (Python + C# + Rust)
+
+`ogar_from_ruff::emit::{emit_python, emit_csharp, emit_rust}(cc: &CompiledClass)`
+materialize a compiled class into a native-language class (Python `@dataclass`
+with `CLASSID: ClassVar`, typed attrs, `Optional`/`ToOne`/`ToMany`; C# / Rust
+siblings) — the AR-direct SDK (`E-AR-DIRECT-SDK`), no bridge, no serialization.
+New crates `ogar-adapter-python` / `ogar-adapter-csharp`. **odoo-rs floats green
+against OGAR `e8626b9` (17/17); Odoo→SDK proven** by
+`src/ogar.rs::odoo_source_materializes_to_the_foreign_consumer_sdk`
+(`account.move` → Python/C#/Rust SDK carrying classid `0x02020002`). This is the
+**typed-API output surface** (a Python/C# consumer of Odoo models uses the
+emitted dataclass) — distinct from the W2 lance-graph V3 **storage-row** sink.
+
 **Consumer impact on odoo-rs: ZERO breakage — verified.** odoo-rs floats green
 (`cargo test -p od-ontology --features cli,fieldmask` = 17/17) against OGAR
 `dee1fc5` + ruff `55bbf60` (which now INCLUDES the merged DTO arm, ruff #51).
