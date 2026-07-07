@@ -256,6 +256,46 @@ fn raises_object_is_namespaced_exception() {
     });
 }
 
+/// **Q1 migration fuse (2026-07-07)** — `parse_ndjson` is now the canonical
+/// `ruff_spo_triplet::from_ndjson`, which fail-loud-rejects any predicate
+/// outside the shared closed vocabulary. The retired local `parse_ndjson`
+/// validated only the JSON *field* shape, so a predicate typo (`depend_on`)
+/// used to parse into a `Triple` and vanish silently from downstream
+/// `depends_on` queries. This pins the upgrade: the typo must now be an error.
+#[test]
+fn unknown_predicate_now_fails_loud_after_upstream_consumption() {
+    let typo = r#"{"s":"odoo:a.b","p":"depend_on","o":"odoo:a.c","f":0.95,"c":0.9}"#;
+    let err = parse_ndjson(typo).expect_err(
+        "an out-of-vocabulary predicate must fail loud now that parse_ndjson is \
+         the closed-vocab ruff_spo_triplet::from_ndjson",
+    );
+    assert_eq!(err.line, 1, "the fail-loud error names the offending 1-based line");
+}
+
+/// Companion to the fuse above: every predicate the SHIPPED Odoo corpora emit
+/// is understood by the shared closed vocabulary — otherwise `parse_ndjson`
+/// (fail-loud) would already have rejected the corpus in `for_each_corpus`.
+/// This makes the cross-repo contract explicit rather than incidental: if a
+/// future corpus regen adds a predicate upstream doesn't know (e.g. the still-
+/// deferred `selection_value`), THIS test's `parse_ndjson` calls fail with a
+/// named predicate, pointing straight at the ruff-side `Predicate` gap.
+#[test]
+fn shipped_corpus_predicates_are_all_in_the_shared_vocabulary() {
+    // Reaching here at all means both corpora parsed under the closed-vocab
+    // validator; assert we actually exercised a non-trivial predicate set so
+    // the guarantee isn't vacuous on an empty corpus.
+    for_each_corpus(|name, triples| {
+        let mut preds: Vec<&str> = triples.iter().map(|t| t.p.as_str()).collect();
+        preds.sort_unstable();
+        preds.dedup();
+        assert!(
+            preds.len() >= 5,
+            "{name}: expected a rich predicate set (got {preds:?}); a near-empty \
+             set would make the shared-vocabulary guarantee vacuous"
+        );
+    });
+}
+
 /// One concrete data pin — the canonical convergence pin for the deep-read
 /// enrichment. This is the load-bearing case the wishlist P0 closed on, and
 /// it documents WHAT the corpus actually carries for any future session

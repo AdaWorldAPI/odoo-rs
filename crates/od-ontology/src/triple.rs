@@ -147,85 +147,64 @@
 //! otherwise the recompute-ordering edge drops for whichever emitter the
 //! enrichment skipped.
 //!
-//! # Repatriation note
+//! # Repatriation note — Phase 2 DONE (2026-07-07): `Triple` + parse consumed upstream
 //!
 //! The schema above used to live solely in
 //! `lance_graph::graph::spo::odoo_ontology` (the generic graph spine — wrong
-//! altitude per `specs/REPATRIATION-FRAME.md`). Pulled here in Phase 1: the
-//! consumer that *uses* the SPO vocabulary now owns its documentation. A
-//! later phase pushes the universal SPO predicates (`has_function`,
-//! `emitted_by`, `depends_on`, `reads_field`, `raises`, `target`) to OGAR /
-//! ruff as the universal cross-language vocabulary, leaving Odoo-specific
-//! predicates (`validation_kind`, `inverse_name`, `inherits_from`,
-//! `selection_value`, `traverses_relation`) here as muscle memory.
+//! altitude per `specs/REPATRIATION-FRAME.md`). Phase 1 pulled its
+//! *documentation* here (the consumer that uses the vocabulary owns the docs);
+//! **Phase 2 (this file) retires the duplicated `Triple` struct + `parse_ndjson`
+//! reader** in favour of consuming the canonical
+//! [`ruff_spo_triplet::Triple`] / [`ruff_spo_triplet::from_ndjson`]. This is the
+//! council-Q1 R3-doctrine fix: odoo-rs was carrying a byte-identical copy of the
+//! shared SPO carrier (both structs are `{s, p, o: String, f, c: f32}`), the
+//! exact duplication `core-first-transcode-doctrine.md` warns against.
+//!
+//! **What consuming upstream buys us (behaviour, not just dedup):**
+//! `ruff_spo_triplet::from_ndjson` additionally validates every `t.p` against
+//! the **closed predicate vocabulary** (`Predicate::from_str`) — a predicate
+//! typo like `depend_on` now fails loud at parse time instead of silently
+//! vanishing from downstream `depends_on` queries. The old local `parse_ndjson`
+//! only validated the JSON *field* shape (`deny_unknown_fields`), never the
+//! predicate *value*. Every predicate the Odoo corpus emits (`rdf:type`,
+//! `has_function`, `emitted_by`, `depends_on`, `reads_field`, `raises`,
+//! `inherits_from`, `inverse_name`, `target`, `validation_kind`) is in
+//! `Predicate::ALL`, so the shipped corpora parse clean; the fail-loud gate is
+//! pure upside.
+//!
+//! **The one still-local predicate:** `selection_value` (schema row above) is
+//! the last Odoo-specific predicate NOT yet in upstream `Predicate::ALL`. It is
+//! also not emitted by any shipped corpus (P3 Selection-enumeration, still open
+//! in `specs/UPSTREAM_WISHLIST.md`), so `from_ndjson` never sees it today. When
+//! the extractor starts emitting it, `ruff_spo_triplet::Predicate` must grow a
+//! `SelectionValue` variant first (council Q1 ruff-side follow-up) — otherwise
+//! the fail-loud gate would (correctly) reject it. Tracked, not synthesised: we
+//! do not add a reader for a fact no corpus carries.
+//!
+//! The IRI-shape helpers below (`strip_ns` / `model_of` / `member_of` /
+//! `is_cross_record`) stay local — they parse the `odoo:<model>.<member>` IRI
+//! convention, which is odoo-rs's frontend concern, not part of the shared
+//! carrier.
 
-use serde::Deserialize;
+/// The canonical SPO carrier — re-exported from `ruff_spo_triplet` so the
+/// Odoo frontend and the OGAR transpiler share one `Triple` type (they must,
+/// or `ModelGraph` values would not unify). Fields: `{s, p, o: String,
+/// f, c: f32}`.
+pub use ruff_spo_triplet::Triple;
 
-/// One ontology triple: subject, predicate, object, NARS `(frequency, confidence)`.
-///
-/// `deny_unknown_fields` so harvester schema drift fails loudly instead of
-/// silently degrading the truth signal.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Triple {
-    /// Subject IRI (`odoo:account_move.amount_total`).
-    pub s: String,
-    /// Predicate (`depends_on`, `emitted_by`, `rdf:type`, …).
-    pub p: String,
-    /// Object IRI (`odoo:account_move.line_ids.balance`, `ogit:Property`, `exc:ValidationError`).
-    pub o: String,
-    /// NARS frequency.
-    pub f: f32,
-    /// NARS confidence.
-    pub c: f32,
-}
+/// Parse newline-delimited triples with **closed-vocabulary predicate
+/// validation** — the canonical `ruff_spo_triplet::from_ndjson`, re-exported
+/// under odoo-rs's historical name. Blank lines are skipped; a malformed line
+/// OR an unknown predicate is a fail-loud error (the frontend emits valid JSON
+/// over the closed vocabulary, so either failure means a corrupted corpus, not
+/// an expected case).
+pub use ruff_spo_triplet::from_ndjson as parse_ndjson;
 
-/// Parse newline-delimited triples. Blank lines are skipped; a malformed line
-/// is an error (the frontend emits valid JSON, so a parse failure means a
-/// corrupted corpus, not an expected case).
-///
-/// # Errors
-/// Returns the offending line number + `serde_json` error on the first line
-/// that fails to parse.
-pub fn parse_ndjson(ndjson: &str) -> Result<Vec<Triple>, ParseError> {
-    let mut out = Vec::new();
-    for (i, line) in ndjson.lines().enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let t = serde_json::from_str(line).map_err(|e| ParseError {
-            line: i + 1,
-            source: e,
-        })?;
-        out.push(t);
-    }
-    Ok(out)
-}
-
-/// A triple-corpus parse failure, with the 1-based line number.
-#[derive(Debug)]
-pub struct ParseError {
-    /// 1-based line number of the offending row.
-    pub line: usize,
-    /// Underlying `serde_json` error.
-    pub source: serde_json::Error,
-}
-
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "ndjson parse error at line {}: {}",
-            self.line, self.source
-        )
-    }
-}
-
-impl std::error::Error for ParseError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.source)
-    }
-}
+/// A triple-corpus parse failure, with the 1-based line number — the canonical
+/// `ruff_spo_triplet::ParseError` (carries `{line, message}`; the old local
+/// variant's `source: serde_json::Error` field is gone, but no consumer read
+/// it — `od-codegen` only uses the `Display`).
+pub use ruff_spo_triplet::ParseError;
 
 /// Strip a known namespace prefix (`odoo:`, `ogit:`, `exc:`) from an IRI.
 #[must_use]

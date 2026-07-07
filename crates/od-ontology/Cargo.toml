@@ -41,6 +41,12 @@ serde_json = "1"
 ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main" }
 ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main" }
 ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
+# ruff_spo_triplet — the canonical SPO carrier (`Triple` + `from_ndjson` +
+# `ParseError`), consumed directly since council-Q1 (2026-07-07) retired
+# odoo-rs's byte-identical local copy in `triple.rs`. Same source as
+# `ruff_python_spo` / `ogar-from-ruff`'s transitive `ruff_spo_triplet`
+# (branch = "main"), so the `Triple`/`ModelGraph` types unify by construction.
+ruff_spo_triplet = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
 
 # lance-graph-contract — the zero-dep OGAR contract crate. Pulled ONLY under
 # the `fieldmask` feature, to mint `WideFieldMask` (lance-graph #651/#653,
