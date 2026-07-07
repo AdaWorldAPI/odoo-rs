@@ -200,6 +200,16 @@ three backends, all speaking the same 16-byte V3 format (operator 2026-07-07):
 - **moka-py (optional RAM cache)** — **PG-side ONLY**; never in front of
   lance-graph (breaks zero-copy). (Rust side: `moka` ↔ Python: `moka-py`.)
 
+**Why SurrealQL existed at all (and why deleting it is safe):** SurrealQL was
+the flexibility play — one query surface whose pluggable KV layer (kv-lance,
+kv-rocksdb) could already speak V3-shaped storage. That indirection is
+superseded: the flexibility moved INTO the storage matrix (lance-graph serves
+V3 natively in Rust + Python; PostgreSQL carries the ACID/ORM 12-column
+3×SPOG shape), so there is no query-language middleman and no DDL/AST adapter
+left to maintain. 3 languages to compile (SDK: rust/python/csharp) ×
+3 storage alternatives (lance-graph rust / lance-graph python / PostgreSQL
++moka-py) — same 16-byte V3 format end to end.
+
 The Python SDK dataclass (`emit_python`) is what those backends host. When
 Odoo classes need PERSISTING/querying (a runtime feature, distinct from the
 transpile), wire it via the plug-and-play migration (§2b) — the tesseract-rs
