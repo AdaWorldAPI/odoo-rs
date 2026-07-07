@@ -86,15 +86,30 @@ is noise — never rewrite inherited history to satisfy it.
 ## 2. The method (OGAR V3 transpile), so you don't re-derive it
 
 Canonical doc: **ruff `.claude/knowledge/fuzzy-recipe-codebook.md`** (READ IT).
+
+**Two substrates, SAME format, OPPOSITE purpose (operator correction
+2026-07-07 — do not conflate):**
+- **OGAR V3 = the COMPILE-TIME substrate (a COMPILER IR).** Uses the 16-byte
+  facet / SPOG format, but its job is *compilation*: `CompiledClass{class,
+  facet, actions}` is compiler output, produced at compile time. This is what
+  the odoo→odoo-rs transpile PRODUCES.
+- **lance-graph V3 = the STORAGE database (runtime).** Same format, different
+  job (persist/query). A DOWNSTREAM runtime concern — **NOT** the transpile
+  completion criterion, and NOT a mandatory W2 "sink" the transpile blocks on.
+
 Pipeline: source → `ruff_python_spo` (fingerprint quartet `writes/reads/raises/
 calls` + J1 `guarded_writes` on `ruff_spo_triplet::Function`) → `expand()`
-triples → `compile_graph_python::<OdooPort>` → `CompiledClass{class, facet,
-actions}` → **lance-graph V3 database** (16-byte facet key = canon-high classid
-+ 12B payload; Odoo reading = **L6 3×(8:8:8:8) SPOG**; 512-byte CANON node
-`key(16)|edges(16)|value(480)`). Behaviour lowers to `ActionDef`/`KausalSpec`
-via the **language-free recipe centroids** (Guard/Default/Compute/Normalize/
-Cascade/Compensate) — **never** to DDL. There is a `fuzzy-proposer` agent for
-this exact cooking.
+triples → `compile_graph_python::<OdooPort>` → **`CompiledClass` (the compile
+substrate)** → **SDK materialization** `ogar_from_ruff::emit::{emit_rust,
+emit_python, emit_csharp}` — the compile substrate now materializes into **3
+languages** (OGAR #177; proven on `account.move` in
+`src/ogar.rs::odoo_source_materializes_to_the_foreign_consumer_sdk`).
+`emit_rust` IS the odoo-rs materialization. Behaviour lowers to
+`ActionDef`/`KausalSpec` via the **language-free recipe centroids** (Guard/
+Default/Compute/Normalize/Cascade/Compensate) — **never** to DDL. There is a
+`fuzzy-proposer` agent for this exact cooking. (facet = canon-high classid +
+12B payload; Odoo reading = **L6 3×(8:8:8:8) SPOG** — the format, shared by
+both substrates.)
 
 Two DO-arm pipelines exist (don't conflate): odoo-rs's **deprecated**
 `corpus_to_actions` (populates `kausal`, now the parity witness) vs OGAR's
@@ -102,11 +117,56 @@ Two DO-arm pipelines exist (don't conflate): odoo-rs's **deprecated**
 
 ---
 
+## 2b. UPDATE 2026-07-07 — the hot-plug migration (COUNT_FUSE dual-store retired)
+
+OGAR + lance-graph migrated to **generic plug-and-play capability handling**,
+replacing the COUNT_FUSE dual-store parity. Rulings + refs:
+`E-HOTPLUG-GENERIC-1` (OGAR #174/#175/#176) + `E-HOTPLUG-MIGRATION-1`
+(lance-graph #658); recipe doc **OGAR
+`.claude/knowledge/hotplug-consumer-migration.md`** (READ IT before W2).
+
+The model — everything in ONE binary, nothing serializes:
+- **SOCKET** (agnostic, zero-dep): `lance_graph_contract::hotplug`
+  (`HotPlug{consumer, classids, covered}`, `Activation`, `ActivationDrift`,
+  trait `CapabilityAuthority`).
+- **AUTHORITY**: OGAR `ogar_vocab::capability_registry::{domain_tables,
+  resolve_hotplug}` + per-domain action tables (`ocr_actions` is the template).
+- **BRIDGE**: `lance-graph-ogar` (workspace-EXCLUDED) — `OgarAuthority:
+  CapabilityAuthority`, owns COUNT_FUSE + roundtrip green light. lance-graph
+  stays **agnostic** (wire mirror + roundtrip only, no ontology payload).
+- **CONSUMER**: ONE `HOT_PLUG` const + ONE activation test + executor.
+- Deps: **sibling PATH deps, NO git pins** (`ogar-vocab = { path =
+  "…/OGAR/crates/ogar-vocab" }`). NEVER a path/optional dep on
+  `lance-graph-contract` toward OGAR (kills CI — it's a workspace member).
+- Drift arms (test-time bang in the consumer's binary): `UnknownClassid` /
+  `NoCapabilitiesFor` / `UnexpectedConsumer` / `Uncovered` / `Undeclared`.
+
+### UPDATE 2026-07-07b — OGAR #177 foreign-consumer SDK (Python + C# + Rust)
+
+`ogar_from_ruff::emit::{emit_python, emit_csharp, emit_rust}(cc: &CompiledClass)`
+materialize a compiled class into a native-language class (Python `@dataclass`
+with `CLASSID: ClassVar`, typed attrs, `Optional`/`ToOne`/`ToMany`; C# / Rust
+siblings) — the AR-direct SDK (`E-AR-DIRECT-SDK`), no bridge, no serialization.
+New crates `ogar-adapter-python` / `ogar-adapter-csharp`. **odoo-rs floats green
+against OGAR `e8626b9` (17/17); Odoo→SDK proven** by
+`src/ogar.rs::odoo_source_materializes_to_the_foreign_consumer_sdk`
+(`account.move` → Python/C#/Rust SDK carrying classid `0x02020002`). This is the
+**typed-API output surface** (a Python/C# consumer of Odoo models uses the
+emitted dataclass) — distinct from the W2 lance-graph V3 **storage-row** sink.
+
+**Consumer impact on odoo-rs: ZERO breakage — verified.** odoo-rs floats green
+(`cargo test -p od-ontology --features cli,fieldmask` = 17/17) against OGAR
+`dee1fc5` + ruff `55bbf60` (which now INCLUDES the merged DTO arm, ruff #51).
+COUNT_FUSE was internal to the OGAR↔lance-graph bridge; the additive
+`capability_registry`/`ocr_actions` surfaces don't touch the `Class` /
+`ActionDef` / `compile_graph_python` surface odoo-rs consumes. odoo-rs is NOT a
+capability *executor* today (it consumes `ActionDef` as data), so it needs no
+`HOT_PLUG` const **until W2**.
+
 ## 3. What REMAINS (the ordered plan to "complete")
 
-**Merge gate first:** merge **ruff #51** (DTO arm). Then float odoo-rs +
-OGAR to the new ruff tip and re-verify (`cargo test -p od-ontology
---features cli,fieldmask` must stay 17/17).
+**Merge gate: DONE.** ruff #51 (DTO arm) is **merged** (ancestor of ruff main
+`55bbf60`); odoo-rs re-verified 17/17 against the migrated OGAR/ruff mains.
 
 **W1 — kausal-parity consume (odoo-rs, Sonnet draft + Opus review).**
 Extend the AT-CONSUME pin (`src/ogar.rs`) to assert `cc.actions[..].kausal`
@@ -118,26 +178,91 @@ that `NATIVE-BEHAVIOUR-SEMANTICS.md` §finding-6 names (prefix vs
 `MethodKind::classify` vs bare `raises`) — pick the OGAR classification as
 canonical and pin the divergence, don't paper it.
 
-**W2 — lance-graph V3 database sink (the actual "database" half — likely the
-biggest remaining chunk; Opus plan first).** Today `CompiledClass` is produced
-but nothing *sinks* it into a lance-graph V3 store. Read lance-graph
-`.claude/v3/soa_layout/{le-contract,tenants,routing,consumer-map}.md` +
-`canonical_node.rs`. The facet (16B) is already the V3 key; the task is writing
-each `CompiledClass` (class attributes → value tenants; associations →
-EdgeBlock; actions → the DO-arm lane) into the 512-byte node / Arrow columns,
-zero-copy, per the LE contract. This is where "lance-graph V3 for database"
-gets realized. Check whether a sibling consumer (medcare-rs / smb-office-rs /
-woa-rs) already has a V3-sink pattern to mirror before designing one — do NOT
-invent a bridge (operator: no bridges; consume `ogar-vocab` + the substrate
-directly, compiled into the same binary).
+**W2 — CORRECTED 2026-07-07: the transpile completes at the compile
+substrate + SDK, NOT at a lance-graph sink.** The odoo→odoo-rs transpile
+"completes" when odoo source lowers to `CompiledClass` (the OGAR V3 compile
+substrate) AND materializes via the SDK (`emit_rust` for odoo-rs; also
+Python/C#) with the behaviour arm carried (W1 kausal). That path is essentially
+DONE and proven (`odoo_source_materializes_to_the_foreign_consumer_sdk`
+green) — what remains for *transpile* completeness is W1 (kausal parity) +
+W3 (delete the deprecated native fork). **lance-graph V3 storage is a SEPARATE
+runtime concern, not the transpile finish line.**
 
-**W3 — Stage-C fork delete (odoo-rs).** Once W1 green: delete
-`src/surreal_ast.rs` + `src/triple.rs` + the native `ToSql` emit + the
-deprecated `emit_via_ogar*`. The gate matrix says structural rows are
-substrate-covered and behaviour rows are carrier-covered once kausal parity
-holds — so this is unblocked after W1, modulo `body_source` (AT-CARRY-3, the
-`ruff_spo_triplet::Function` body-source extension, SPEC-1 Part A — still a
-follow-up; row #15 method body is structurally unreachable until it lands).
+**W2′ (optional, downstream) — V3 STORAGE / HOSTING layer.** The transpile
+output (the compile substrate + its SDK materialization) can be HOSTED across
+three backends, all speaking the same 16-byte V3 format (operator 2026-07-07):
+
+- **lance-graph (python adapter)** — the graph / zero-copy read hot path.
+- **PostgreSQL = the ORM version of V3**: `classid + 12 payload columns =
+  3×SPOG`. The 12-byte payload's `3×(8:8:8:8)` quads become **12 relational
+  columns** — the ACID / transactional system-of-record (GoBD). DDL comes from
+  the ClassView (`ogar-adapter-postgres-ddl`), never SurrealQL.
+- **moka-py (optional RAM cache)** — **PG-side ONLY**; never in front of
+  lance-graph (breaks zero-copy). (Rust side: `moka` ↔ Python: `moka-py`.)
+
+**Why SurrealQL existed at all (and why deleting it is safe):** SurrealQL was
+the flexibility play — one query surface whose pluggable KV layer (kv-lance,
+kv-rocksdb) could already speak V3-shaped storage. That indirection is
+superseded: the flexibility moved INTO the storage matrix (lance-graph serves
+V3 natively in Rust + Python; PostgreSQL carries the ACID/ORM 12-column
+3×SPOG shape), so there is no query-language middleman and no DDL/AST adapter
+left to maintain. 3 languages to compile (SDK: rust/python/csharp) ×
+3 storage alternatives (lance-graph rust / lance-graph python / PostgreSQL
++moka-py) — same 16-byte V3 format end to end.
+
+The Python SDK dataclass (`emit_python`) is what those backends host. When
+Odoo classes need PERSISTING/querying (a runtime feature, distinct from the
+transpile), wire it via the plug-and-play migration (§2b) — the tesseract-rs
+#13/#14 template applied to Odoo:
+  1. **Authority (OGAR PR):** declare an `odoo_actions` domain table in
+     `ogar-vocab` next to `ocr_actions` — one `ActionDef` per Odoo behaviour
+     capability on the already-minted canon-high concepts (`0x0202`
+     commercial_document, `0x0103` billable_work_entry, …). Export
+     `ODOO_ACTION_NAMES` / `ODOO_SUBJECT_CLASSIDS` /
+     `ODOO_EXPECTED_EXECUTORS = ["od-ontology"]`; register ONE
+     `capability_registry::domain_tables()` entry.
+  2. **Consumer (odoo-rs):** switch OGAR + lance-graph-contract to **sibling
+     PATH deps** (drop the `branch=main` git deps per NO-PIN); declare
+     `pub const HOT_PLUG: HotPlug { consumer: "od-ontology", classids:
+     ODOO_SUBJECT_CLASSIDS, covered: <executor arms> }`; add ONE activation
+     test calling `resolve_hotplug(...)` (or `OgarAuthority.activate(&HOT_PLUG)`).
+  3. The actual row write (CompiledClass → 512-byte CANON node / Arrow
+     columns per lance-graph `.claude/v3/soa_layout/le-contract.md`) is the
+     executor body behind the covered capabilities. facet(16B) = the V3 key
+     already. Mirror tesseract-rs's executor; invent no bridge.
+Read OGAR `.claude/knowledge/hotplug-consumer-migration.md` §"Migration
+recipe" verbatim — it is a ~1-hour recipe, not a design problem.
+
+**W1 — DONE 2026-07-07** (`c2094b4`): the kausal-parity pin
+(`ogar::tests::kausal_parity_pinned_ogar_vs_corpus_witness`) is green — OGAR
+`lift_actions` kausal is canonical; the two divergences from the corpus
+witness are pinned (Depends source: `depends_on` vs `reads_field`; guard
+variant: `Constrains{paths}` vs `LifecycleTrigger{before_save}+Reject`).
+`corpus_to_actions` stays as the LIVING divergence pin (its deprecation note's
+"delete when AT-CARRY-2 lands" is now moot — AT-CARRY-2 landed; the witness's
+value is now the permanent regression, so keep it, test-only).
+
+**W3 — Stage-C fork delete (odoo-rs). SCOPE CORRECTED 2026-07-07 — do NOT
+delete `triple.rs`.** Dependency map (verified): `triple.rs`
+(`Triple`/`parse_ndjson`/`model_of`) is LOAD-BEARING for the entire corpus
+layer — `inheritance` / `mro` / `recompute_dag` / `relations` / `view_mask`
+and ALL the F15/F16/F17 probes + `delegation_inherit_equivalence`. Deleting it
+destroys legitimate infrastructure. The actual deletable **SurrealQL fork** is:
+  - `src/surreal_ast.rs` (the SurrealQL AST + `ToSql`);
+  - the native emit in `src/emit.rs` (`corpus_to_schema` → `Schema`, the
+    `ToSql` impl) — the OLD corpus→Schema path Stage B superseded with
+    `compile_source`;
+  - the deprecated `emit_via_ogar*` / `schema_to_classes` in `src/ogar.rs`;
+  - SurrealQL-only tests (`odoo_ogar_convergence`, `ogar_parallel_emit`,
+    the Schema-path parts of `slice_2` / `slice_2_typed_lift` /
+    `account_move_slice`) — **rehome the valuable classid pins**
+    (`render_classid`/`concept_classid` asserts) onto the `compile_source`
+    path before deleting, do NOT lose them.
+  Unblocked NOW: SurrealQL is *absolutely deprecated*, so there is no
+  "cover-it-first" gate (the shared `ogar-adapter-surrealql` path is ALSO
+  dead) — the fork is dead code, not a to-be-replaced emitter. `body_source`
+  (AT-CARRY-3) is orthogonal — it's about full body lowering, not the
+  SurrealQL delete.
 
 **Deferred / not on the critical path:** W3.4 RBAC keystone (upstream
 CONJECTURE); `od-posting` GoBD 15% hand-adapter (skeleton); F1 → `[G]` (needs a

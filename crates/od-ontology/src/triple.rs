@@ -20,17 +20,20 @@
 //!                            Vec<Triple>  (the typed AST)
 //!                                       │
 //!                                       │ lowering passes (sibling modules):
-//!                                       │   schema_to_classes   → ogar_vocab::Class    (structure)
-//!                                       │   corpus_to_actions   → ogar_vocab::ActionDef (behaviour)
+//!                                       │   corpus_to_actions   → ogar_vocab::ActionDef (behaviour,
+//!                                       │                          kausal-parity witness; the primary
+//!                                       │                          structural+behavioural lowering is
+//!                                       │                          `compile_source` over `.py` text,
+//!                                       │                          not this corpus — see `ogar.rs`)
 //!                                       ▼
-//!                                  OGAR IR
+//!                                  OGAR IR (`Class` + `ActionDef` + facet)
 //!                                       │
-//!                                       │ codegen (egress adapters):
-//!                                       │   ogar-adapter-surrealql   → DEFINE TABLE / FIELD
-//!                                       │   ogar-adapter-ttl         → TTL
-//!                                       │   (future) ogar-from-odoo  → reusable lifter
+//!                                       │ sink: lance-graph V3 database
+//!                                       │ (16-byte facet key, canon-high classid) —
+//!                                       │ NOT SurrealQL (deprecated 2026-07-06, see
+//!                                       │ docs/W3.3-DELETE-GATE-MATRIX.md)
 //!                                       ▼
-//!                                  Target text / runtime
+//!                                  Target store / runtime
 //! ```
 //!
 //! odoo-rs is the **Odoo language frontend** of that compiler (the per-source
@@ -256,10 +259,3 @@ pub fn is_cross_record(member: &str) -> bool {
     member.contains('.')
 }
 
-/// Split a cross-record member path into `(relation, leaf)` — the first hop and
-/// the remainder. `line_ids.balance` → `("line_ids", "balance")`;
-/// `company_id.country.code` → `("company_id", "country.code")`.
-#[must_use]
-pub fn first_hop(member: &str) -> Option<(&str, &str)> {
-    member.split_once('.')
-}

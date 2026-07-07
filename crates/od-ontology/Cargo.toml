@@ -1,15 +1,13 @@
 [package]
 name = "od-ontology"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Odoo's business-logic ontology lowered to native SurrealDB DDL (DEFINE TABLE/FIELD/FUNCTION/EVENT). Not an ORM; not a migration tool."
+description = "Odoo's business-logic ontology lowered through the OGAR V3 transpile substrate (compile_source -> CompiledClass) and pulled into the shared OGAR classid codebook. Not an ORM; not a SurrealQL codegen tool."
 repository = "https://github.com/AdaWorldAPI/odoo-rs"
 
 [dependencies]
-# serde-only, mirroring ruff_spo_triplet — the SPO corpus is JSON; the AST emit
-# side is pure (zero deps). No surrealdb-core (tokio + rust-1.95 + rocksdb is
-# disproportionate for "emit DDL"; we mirror its catalog shape instead).
+# serde-only, mirroring ruff_spo_triplet — the SPO corpus is JSON.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -18,15 +16,15 @@ serde_json = "1"
 # ALWAYS compiled into the same binary; the former `ogar-emit` opt-in gate is
 # retired). Together they provide the odoo-rs <-> OGAR convergence:
 #   * ogar-vocab             — the shared `ogar_vocab::Class` IR + OdooPort codebook
-#   * ogar-adapter-surrealql — the shared SurrealQL emitter. Its EMIT path is
-#                              dep-light (ogar-vocab + a hand-written formatter);
-#                              `surrealdb` is gated behind that crate's
-#                              `surrealdb-parser` feature (the parse-back leg),
-#                              which we do NOT enable — so the convergence emit
-#                              path builds offline.
 #   * ogar-from-ruff         — the per-class transpile substrate, OGAR #132:
 #                              `mint::compile_graph_python::<OdooPort>` (lift+mint)
 #   * ruff_python_spo        — parse Odoo source `.py` -> `ruff_spo_triplet::ModelGraph`
+#
+# NOTE (2026-07-06): `ogar-adapter-surrealql` was dropped from this list —
+# SurrealQL is deprecated (operator ruling: "SurrealQL is absolutely
+# deprecated. OGAR V3 for transpile substrate, lance-graph V3 for database.").
+# It was only ever pulled in for the now-deleted `emit_via_ogar*` DDL-emit
+# path (`surreal_ast.rs` / `emit.rs`, see `docs/W3.3-DELETE-GATE-MATRIX.md`).
 #
 # SOURCE-ALIGNMENT (Codex P1 on #20): `ruff_python_spo` and OGAR's
 # `ogar-from-ruff` both depend on `ruff_spo_triplet` — the `ModelGraph` type.
@@ -41,7 +39,6 @@ serde_json = "1"
 # the O-2 arc that got us to float-on-main lives in the git history of this
 # block and in docs/ODOO-OGAR-MIGRATION-SPRINT.md.)
 ogar-vocab = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main" }
-ogar-adapter-surrealql = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main" }
 ogar-from-ruff = { git = "https://github.com/AdaWorldAPI/OGAR", branch = "main" }
 ruff_python_spo = { git = "https://github.com/AdaWorldAPI/ruff", branch = "main" }
 
@@ -56,11 +53,6 @@ lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", bra
 # Lib consumers without the feature pay zero extra cost; the bin + its tests
 # only compile under this flag.
 cli = []
-# Stage 1 parallel-emit convergence path. Lowers the bespoke `Schema` onto
-# `ogar_vocab::Class` and emits via `ogar-adapter-surrealql`, ALONGSIDE the
-# native `ToSql` emit — additive, never replacing. Lib consumers without the
-# feature pay zero cost; the bridge module + its convergence test only
-# compile under this flag.
 # Wide-field-mask convergence: mint `lance_graph_contract::WideFieldMask` from
 # view_mask's `MaskWords` harvest artifact (the named follow-up documented in
 # view_mask.rs's module docs, now unblocked by lance-graph #651/#653). Lib
