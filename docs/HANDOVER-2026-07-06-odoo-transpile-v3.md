@@ -188,11 +188,22 @@ green) — what remains for *transpile* completeness is W1 (kausal parity) +
 W3 (delete the deprecated native fork). **lance-graph V3 storage is a SEPARATE
 runtime concern, not the transpile finish line.**
 
-**W2′ (optional, downstream) — lance-graph V3 STORAGE, via the HOT-PLUG
-recipe.** If/when Odoo classes need to be PERSISTED/queried in the lance-graph
-V3 database (a runtime storage feature, distinct from the transpile), use the
-plug-and-play migration (§2b) — the tesseract-rs #13/#14 template applied to
-Odoo:
+**W2′ (optional, downstream) — V3 STORAGE / HOSTING layer.** The transpile
+output (the compile substrate + its SDK materialization) can be HOSTED across
+three backends, all speaking the same 16-byte V3 format (operator 2026-07-07):
+
+- **lance-graph (python adapter)** — the graph / zero-copy read hot path.
+- **PostgreSQL = the ORM version of V3**: `classid + 12 payload columns =
+  3×SPOG`. The 12-byte payload's `3×(8:8:8:8)` quads become **12 relational
+  columns** — the ACID / transactional system-of-record (GoBD). DDL comes from
+  the ClassView (`ogar-adapter-postgres-ddl`), never SurrealQL.
+- **moka-py (optional RAM cache)** — **PG-side ONLY**; never in front of
+  lance-graph (breaks zero-copy). (Rust side: `moka` ↔ Python: `moka-py`.)
+
+The Python SDK dataclass (`emit_python`) is what those backends host. When
+Odoo classes need PERSISTING/querying (a runtime feature, distinct from the
+transpile), wire it via the plug-and-play migration (§2b) — the tesseract-rs
+#13/#14 template applied to Odoo:
   1. **Authority (OGAR PR):** declare an `odoo_actions` domain table in
      `ogar-vocab` next to `ocr_actions` — one `ActionDef` per Odoo behaviour
      capability on the already-minted canon-high concepts (`0x0202`
