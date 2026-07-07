@@ -223,13 +223,36 @@ transpile), wire it via the plug-and-play migration (§2b) — the tesseract-rs
 Read OGAR `.claude/knowledge/hotplug-consumer-migration.md` §"Migration
 recipe" verbatim — it is a ~1-hour recipe, not a design problem.
 
-**W3 — Stage-C fork delete (odoo-rs).** Once W1 green: delete
-`src/surreal_ast.rs` + `src/triple.rs` + the native `ToSql` emit + the
-deprecated `emit_via_ogar*`. The gate matrix says structural rows are
-substrate-covered and behaviour rows are carrier-covered once kausal parity
-holds — so this is unblocked after W1, modulo `body_source` (AT-CARRY-3, the
-`ruff_spo_triplet::Function` body-source extension, SPEC-1 Part A — still a
-follow-up; row #15 method body is structurally unreachable until it lands).
+**W1 — DONE 2026-07-07** (`c2094b4`): the kausal-parity pin
+(`ogar::tests::kausal_parity_pinned_ogar_vs_corpus_witness`) is green — OGAR
+`lift_actions` kausal is canonical; the two divergences from the corpus
+witness are pinned (Depends source: `depends_on` vs `reads_field`; guard
+variant: `Constrains{paths}` vs `LifecycleTrigger{before_save}+Reject`).
+`corpus_to_actions` stays as the LIVING divergence pin (its deprecation note's
+"delete when AT-CARRY-2 lands" is now moot — AT-CARRY-2 landed; the witness's
+value is now the permanent regression, so keep it, test-only).
+
+**W3 — Stage-C fork delete (odoo-rs). SCOPE CORRECTED 2026-07-07 — do NOT
+delete `triple.rs`.** Dependency map (verified): `triple.rs`
+(`Triple`/`parse_ndjson`/`model_of`) is LOAD-BEARING for the entire corpus
+layer — `inheritance` / `mro` / `recompute_dag` / `relations` / `view_mask`
+and ALL the F15/F16/F17 probes + `delegation_inherit_equivalence`. Deleting it
+destroys legitimate infrastructure. The actual deletable **SurrealQL fork** is:
+  - `src/surreal_ast.rs` (the SurrealQL AST + `ToSql`);
+  - the native emit in `src/emit.rs` (`corpus_to_schema` → `Schema`, the
+    `ToSql` impl) — the OLD corpus→Schema path Stage B superseded with
+    `compile_source`;
+  - the deprecated `emit_via_ogar*` / `schema_to_classes` in `src/ogar.rs`;
+  - SurrealQL-only tests (`odoo_ogar_convergence`, `ogar_parallel_emit`,
+    the Schema-path parts of `slice_2` / `slice_2_typed_lift` /
+    `account_move_slice`) — **rehome the valuable classid pins**
+    (`render_classid`/`concept_classid` asserts) onto the `compile_source`
+    path before deleting, do NOT lose them.
+  Unblocked NOW: SurrealQL is *absolutely deprecated*, so there is no
+  "cover-it-first" gate (the shared `ogar-adapter-surrealql` path is ALSO
+  dead) — the fork is dead code, not a to-be-replaced emitter. `body_source`
+  (AT-CARRY-3) is orthogonal — it's about full body lowering, not the
+  SurrealQL delete.
 
 **Deferred / not on the critical path:** W3.4 RBAC keystone (upstream
 CONJECTURE); `od-posting` GoBD 15% hand-adapter (skeleton); F1 → `[G]` (needs a
