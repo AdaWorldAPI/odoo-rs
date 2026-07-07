@@ -102,11 +102,43 @@ Two DO-arm pipelines exist (don't conflate): odoo-rs's **deprecated**
 
 ---
 
+## 2b. UPDATE 2026-07-07 — the hot-plug migration (COUNT_FUSE dual-store retired)
+
+OGAR + lance-graph migrated to **generic plug-and-play capability handling**,
+replacing the COUNT_FUSE dual-store parity. Rulings + refs:
+`E-HOTPLUG-GENERIC-1` (OGAR #174/#175/#176) + `E-HOTPLUG-MIGRATION-1`
+(lance-graph #658); recipe doc **OGAR
+`.claude/knowledge/hotplug-consumer-migration.md`** (READ IT before W2).
+
+The model — everything in ONE binary, nothing serializes:
+- **SOCKET** (agnostic, zero-dep): `lance_graph_contract::hotplug`
+  (`HotPlug{consumer, classids, covered}`, `Activation`, `ActivationDrift`,
+  trait `CapabilityAuthority`).
+- **AUTHORITY**: OGAR `ogar_vocab::capability_registry::{domain_tables,
+  resolve_hotplug}` + per-domain action tables (`ocr_actions` is the template).
+- **BRIDGE**: `lance-graph-ogar` (workspace-EXCLUDED) — `OgarAuthority:
+  CapabilityAuthority`, owns COUNT_FUSE + roundtrip green light. lance-graph
+  stays **agnostic** (wire mirror + roundtrip only, no ontology payload).
+- **CONSUMER**: ONE `HOT_PLUG` const + ONE activation test + executor.
+- Deps: **sibling PATH deps, NO git pins** (`ogar-vocab = { path =
+  "…/OGAR/crates/ogar-vocab" }`). NEVER a path/optional dep on
+  `lance-graph-contract` toward OGAR (kills CI — it's a workspace member).
+- Drift arms (test-time bang in the consumer's binary): `UnknownClassid` /
+  `NoCapabilitiesFor` / `UnexpectedConsumer` / `Uncovered` / `Undeclared`.
+
+**Consumer impact on odoo-rs: ZERO breakage — verified.** odoo-rs floats green
+(`cargo test -p od-ontology --features cli,fieldmask` = 17/17) against OGAR
+`dee1fc5` + ruff `55bbf60` (which now INCLUDES the merged DTO arm, ruff #51).
+COUNT_FUSE was internal to the OGAR↔lance-graph bridge; the additive
+`capability_registry`/`ocr_actions` surfaces don't touch the `Class` /
+`ActionDef` / `compile_graph_python` surface odoo-rs consumes. odoo-rs is NOT a
+capability *executor* today (it consumes `ActionDef` as data), so it needs no
+`HOT_PLUG` const **until W2**.
+
 ## 3. What REMAINS (the ordered plan to "complete")
 
-**Merge gate first:** merge **ruff #51** (DTO arm). Then float odoo-rs +
-OGAR to the new ruff tip and re-verify (`cargo test -p od-ontology
---features cli,fieldmask` must stay 17/17).
+**Merge gate: DONE.** ruff #51 (DTO arm) is **merged** (ancestor of ruff main
+`55bbf60`); odoo-rs re-verified 17/17 against the migrated OGAR/ruff mains.
 
 **W1 — kausal-parity consume (odoo-rs, Sonnet draft + Opus review).**
 Extend the AT-CONSUME pin (`src/ogar.rs`) to assert `cc.actions[..].kausal`
@@ -118,18 +150,28 @@ that `NATIVE-BEHAVIOUR-SEMANTICS.md` §finding-6 names (prefix vs
 `MethodKind::classify` vs bare `raises`) — pick the OGAR classification as
 canonical and pin the divergence, don't paper it.
 
-**W2 — lance-graph V3 database sink (the actual "database" half — likely the
-biggest remaining chunk; Opus plan first).** Today `CompiledClass` is produced
-but nothing *sinks* it into a lance-graph V3 store. Read lance-graph
-`.claude/v3/soa_layout/{le-contract,tenants,routing,consumer-map}.md` +
-`canonical_node.rs`. The facet (16B) is already the V3 key; the task is writing
-each `CompiledClass` (class attributes → value tenants; associations →
-EdgeBlock; actions → the DO-arm lane) into the 512-byte node / Arrow columns,
-zero-copy, per the LE contract. This is where "lance-graph V3 for database"
-gets realized. Check whether a sibling consumer (medcare-rs / smb-office-rs /
-woa-rs) already has a V3-sink pattern to mirror before designing one — do NOT
-invent a bridge (operator: no bridges; consume `ogar-vocab` + the substrate
-directly, compiled into the same binary).
+**W2 — lance-graph V3 database sink, via the HOT-PLUG recipe (REVISED
+2026-07-07; Opus plan first).** The old "invent a sink" framing is
+SUPERSEDED by the plug-and-play migration (§2b). The path is now the
+tesseract-rs #13/#14 template, applied to Odoo:
+  1. **Authority (OGAR PR):** declare an `odoo_actions` domain table in
+     `ogar-vocab` next to `ocr_actions` — one `ActionDef` per Odoo behaviour
+     capability on the already-minted canon-high concepts (`0x0202`
+     commercial_document, `0x0103` billable_work_entry, …). Export
+     `ODOO_ACTION_NAMES` / `ODOO_SUBJECT_CLASSIDS` /
+     `ODOO_EXPECTED_EXECUTORS = ["od-ontology"]`; register ONE
+     `capability_registry::domain_tables()` entry.
+  2. **Consumer (odoo-rs):** switch OGAR + lance-graph-contract to **sibling
+     PATH deps** (drop the `branch=main` git deps per NO-PIN); declare
+     `pub const HOT_PLUG: HotPlug { consumer: "od-ontology", classids:
+     ODOO_SUBJECT_CLASSIDS, covered: <executor arms> }`; add ONE activation
+     test calling `resolve_hotplug(...)` (or `OgarAuthority.activate(&HOT_PLUG)`).
+  3. The actual row write (CompiledClass → 512-byte CANON node / Arrow
+     columns per lance-graph `.claude/v3/soa_layout/le-contract.md`) is the
+     executor body behind the covered capabilities. facet(16B) = the V3 key
+     already. Mirror tesseract-rs's executor; invent no bridge.
+Read OGAR `.claude/knowledge/hotplug-consumer-migration.md` §"Migration
+recipe" verbatim — it is a ~1-hour recipe, not a design problem.
 
 **W3 — Stage-C fork delete (odoo-rs).** Once W1 green: delete
 `src/surreal_ast.rs` + `src/triple.rs` + the native `ToSql` emit + the
