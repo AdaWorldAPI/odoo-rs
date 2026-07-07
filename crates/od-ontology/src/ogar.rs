@@ -701,4 +701,160 @@ class AccountMove(models.Model):
             "rust SDK materializes a struct with the classid:\n{rs}"
         );
     }
+
+    /// KAUSAL-PARITY PIN: the two DO-arm pipelines — the corpus witness
+    /// [`corpus_to_actions`](crate::corpus_to_actions) (deprecated) and the
+    /// OGAR live arm ([`compile_source`] -> `lift_actions`) — build
+    /// [`KausalSpec`] from the SAME Odoo model DIFFERENTLY for a guard
+    /// method. This test PINS both divergences with OGAR as canonical, so
+    /// neither pipeline can silently re-converge (or diverge further)
+    /// without failing here. Companion to `compile_source_carries_the_do_arm`
+    /// (which pins `MethodKind` classification parity); this one pins the
+    /// `KausalSpec` *shape* parity/divergence.
+    #[test]
+    #[allow(deprecated)] // corpus_to_actions is the intentional deprecated witness
+    fn kausal_parity_pinned_ogar_vs_corpus_witness() {
+        use ogar_vocab::{GuardFailurePolicy, KausalSpec};
+
+        // One Python model, deliberately mirrored into both arms: a
+        // `_compute_amount` compute (`@api.depends('line_ids.balance')`) and
+        // a `_check_balanced` guard (`@api.constrains('line_ids')`, raises).
+        const SRC: &str = concat!(
+            "from odoo import api, models, fields\n",
+            "from odoo.exceptions import ValidationError\n\n\n",
+            "class AM(models.Model):\n",
+            "    _name = 'account.move'\n",
+            "    amount_total = fields.Monetary(compute='_compute_amount')\n\n",
+            "    @api.depends('line_ids.balance')\n",
+            "    def _compute_amount(self):\n",
+            "        for move in self:\n",
+            "            move.amount_total = sum(move.line_ids.mapped('balance'))\n\n",
+            "    @api.constrains('line_ids')\n",
+            "    def _check_balanced(self):\n",
+            "        for move in self:\n",
+            "            if move.amount_total != 0:\n",
+            "                raise ValidationError('not balanced')\n",
+        );
+
+        // The corpus witness's parallel SPO facts for the SAME two methods
+        // (same method names, same field). The `reads_field` object is
+        // deliberately written as the bare dotted path `line_ids.balance`
+        // (matching OGAR's raw `@api.depends` arg verbatim) rather than this
+        // crate's usual `<model>.<field>` qualified convention (see this
+        // file's own corpus fixtures elsewhere, e.g. `account_move.line_ids`)
+        // — ONLY so this controlled fixture can assert textual path equality
+        // below. GENERALLY the corpus's `reads_field` harvest and OGAR's
+        // `Field::depends_on` are lifted by two independent extractors and
+        // are NOT guaranteed to agree byte-for-byte — the corpus can carry a
+        // superset (deep cross-model leaf reads, see `recompute_dag.rs`'s
+        // slice-2 enrichment) or a differently-qualified string. OGAR remains
+        // canonical whenever the two disagree.
+        const NDJSON: &str = concat!(
+            r#"{"s":"odoo:account_move","p":"has_function","o":"odoo:account_move._compute_amount","f":0.9,"c":0.9}"#, "\n",
+            r#"{"s":"odoo:account_move._compute_amount","p":"reads_field","o":"odoo:line_ids.balance","f":0.9,"c":0.9}"#, "\n",
+            r#"{"s":"odoo:account_move","p":"has_function","o":"odoo:account_move._check_balanced","f":0.9,"c":0.9}"#, "\n",
+            r#"{"s":"odoo:account_move._check_balanced","p":"raises","o":"exc:ValidationError","f":0.9,"c":0.9}"#, "\n",
+        );
+
+        // ── OGAR live arm ────────────────────────────────────────────────
+        let compiled = compile_source(SRC);
+        assert_eq!(compiled.len(), 1, "one class compiled from SRC");
+        let cc = &compiled[0];
+
+        let ogar_compute = cc
+            .actions
+            .iter()
+            .find(|a| a.predicate == "_compute_amount")
+            .expect("OGAR arm carries _compute_amount");
+        let ogar_guard = cc
+            .actions
+            .iter()
+            .find(|a| a.predicate == "_check_balanced")
+            .expect("OGAR arm carries _check_balanced");
+
+        // ── corpus witness arm ──────────────────────────────────────────
+        let triples = crate::parse_ndjson(NDJSON).expect("fixture ndjson parses");
+        let corpus_actions = crate::corpus_to_actions(&triples);
+
+        let corpus_compute = corpus_actions
+            .iter()
+            .find(|a| a.predicate == "_compute_amount")
+            .expect("corpus witness carries _compute_amount");
+        let corpus_guard = corpus_actions
+            .iter()
+            .find(|a| a.predicate == "_check_balanced")
+            .expect("corpus witness carries _check_balanced");
+
+        // ── 1. Compute method: both arms agree on the VARIANT (Depends);
+        //    OGAR is authoritative on the PATHS. ──────────────────────────
+        let ogar_paths = match &ogar_compute.kausal {
+            Some(KausalSpec::Depends { paths }) => paths.clone(),
+            other => panic!("OGAR compute kausal must be Depends, got {other:?}"),
+        };
+        let corpus_paths = match &corpus_compute.kausal {
+            Some(KausalSpec::Depends { paths }) => paths.clone(),
+            other => panic!("corpus compute kausal must be Depends, got {other:?}"),
+        };
+        assert_eq!(
+            ogar_paths,
+            vec!["line_ids.balance".to_string()],
+            "OGAR's Depends paths come straight from SRC's @api.depends(...) \
+             set (Field::depends_on) — that is the authoritative source \
+             (NATIVE-BEHAVIOUR-SEMANTICS finding-6)"
+        );
+        // On THIS controlled fixture the two arms agree textually because the
+        // ndjson was hand-aligned to OGAR's raw depends_on convention. This is
+        // NOT a general guarantee: the corpus's `reads_field` harvest can be a
+        // superset (deep cross-model leaf reads) or use a different
+        // qualification convention (`<model>.<field>` vs OGAR's raw decorator-
+        // arg string) than OGAR's `depends_on`. OGAR is canonical whenever
+        // they diverge — this equality is a fixture artifact, not a promise.
+        assert_eq!(
+            corpus_paths, ogar_paths,
+            "aligned only because this fixture's reads_field was hand-matched \
+             to OGAR's depends_on; not a general corpus<->OGAR guarantee"
+        );
+
+        // ── 2. Guard method: the KNOWN variant divergence, pinned. ────────
+        // DIVERGENCE (pinned, OGAR canonical): the corpus witness models a
+        // constrains-guard as an event LifecycleTrigger+Reject; OGAR models
+        // it as a Constrains validation trigger carrying the constrained
+        // paths — the OGAR shape is canonical (SPEC-ATC2-OGAR Arm B keeps
+        // validation distinct from a persisted recompute trigger).
+        assert_eq!(
+            corpus_guard.kausal,
+            Some(KausalSpec::LifecycleTrigger {
+                event: "before_save".to_string()
+            }),
+            "corpus witness models @api.constrains as a before_save lifecycle event"
+        );
+        assert_eq!(
+            corpus_guard.guard_failure_policy,
+            Some(GuardFailurePolicy::Reject),
+            "corpus witness attaches a Reject guard-failure policy to the guard"
+        );
+        assert_eq!(
+            ogar_guard.kausal,
+            Some(KausalSpec::Constrains {
+                paths: vec!["line_ids".to_string()]
+            }),
+            "OGAR (canonical) models @api.constrains as a Constrains validation \
+             trigger carrying the constrained field paths, NOT a lifecycle event"
+        );
+        assert_eq!(
+            ogar_guard.guard_failure_policy, None,
+            "OGAR's ActionDef has no guard_failure_policy populated by \
+             lift_actions Arm B — guard/RBAC enrichment is a downstream \
+             registrar concern, not the producer's (see lift_actions docs)"
+        );
+
+        // ── 3. Drift tripwire: the behaviour-method COUNT agrees between
+        //    arms for this fixture (guard + compute = 2 each). ────────────
+        assert_eq!(
+            (cc.actions.len(), corpus_actions.len()),
+            (2, 2),
+            "a future drift in either pipeline's harvested method-set must \
+             show up here before it shows up as a silent behaviour gap"
+        );
+    }
 }
