@@ -43,7 +43,7 @@ use crate::triple::{member_of, model_of, strip_ns, Triple};
 /// write-backs, `_search_*`, plain helpers) are intentionally not lowered —
 /// they are not the reactive/guard behavioral arm. The `action_*` state-
 /// crossing arm is deferred (see the module docs — a producer-side fact gap).
-#[deprecated(since = "0.5.0", note = "the DO-arm lives in OGAR (operator ruling 2026-07-06): actions arrive on `CompiledClass.actions` via `compile_source`; this corpus-side duplicate pipeline is retained only as the kausal-parity witness until AT-CARRY-2 lands upstream")]
+#[deprecated(since = "0.5.0", note = "the DO-arm lives in OGAR (operator ruling 2026-07-06): actions arrive on `CompiledClass.actions` via `compile_source`; this corpus-side pipeline is retained as (1) the kausal-parity witness and (2) the implementation behind `od-codegen --actions` (which reads ndjson corpora, not source) — do NOT remove until that CLI mode is migrated or retired")]
 #[must_use]
 pub fn corpus_to_actions(triples: &[Triple]) -> Vec<ActionDef> {
     let mut methods: BTreeSet<&str> = BTreeSet::new();
@@ -116,7 +116,7 @@ pub fn corpus_to_actions(triples: &[Triple]) -> Vec<ActionDef> {
 /// lowering without depending on `ogar-vocab` or matching its
 /// `#[non_exhaustive]` enums. Order mirrors [`corpus_to_actions`].
 #[allow(deprecated)] // internally rides corpus_to_actions, deprecated together
-#[deprecated(since = "0.5.0", note = "the DO-arm lives in OGAR (operator ruling 2026-07-06): actions arrive on `CompiledClass.actions` via `compile_source`; this corpus-side duplicate pipeline is retained only as the kausal-parity witness until AT-CARRY-2 lands upstream")]
+#[deprecated(since = "0.5.0", note = "the DO-arm lives in OGAR (operator ruling 2026-07-06): actions arrive on `CompiledClass.actions` via `compile_source`; this corpus-side pipeline is retained as (1) the kausal-parity witness and (2) the implementation behind `od-codegen --actions` (which reads ndjson corpora, not source) — do NOT remove until that CLI mode is migrated or retired")]
 #[must_use]
 pub fn corpus_action_rows(triples: &[Triple]) -> Vec<(String, String, String, String)> {
     corpus_to_actions(triples)
@@ -140,6 +140,9 @@ pub fn corpus_action_rows(triples: &[Triple]) -> Vec<(String, String, String, St
 }
 
 #[cfg(test)]
+// The module under test IS the deprecated corpus witness — its tests
+// legitimately exercise the deprecated surface (that is their whole job).
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

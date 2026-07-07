@@ -68,7 +68,7 @@ fn strip_ns(iri: &str) -> &str {
 
 fn corpus() -> Vec<Triple> {
     // Same richest committed corpus the `corpus_to_actions` unit test uses:
-    // account_move + account_move_line + res_partner + res_company (2 739 rows).
+    // account_move + account_move_line + res_partner + res_company (3 065 rows).
     let ndjson = include_str!("../../../data/slice_2.spo.ndjson");
     parse_ndjson(ndjson).expect("slice 2 corpus parses")
 }
@@ -249,6 +249,9 @@ fn ar_lifecycle_override_redundancy() {
     // with the REAL lift (`corpus_action_rows`), so the two classifications can
     // never silently drift, and every guard must render ONE recipe detail.
         {
+        // Deprecated witness consumed on purpose: this probe pins the corpus
+        // arm against the real lift (see ogar_actions.rs deprecation note).
+        #[allow(deprecated)]
         let rows = od_ontology::corpus_action_rows(&triples);
         let guard_rows: Vec<&(String, String, String, String)> =
             rows.iter().filter(|r| r.2 == "guard").collect();
