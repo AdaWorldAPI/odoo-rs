@@ -1,6 +1,8 @@
 //! **W3.3 behavioral-arm lowering** — Odoo's reactive lifecycle → the OGAR
 //! behavioral arm (`ogar_vocab::ActionDef` + `KausalSpec`), the sibling of the
-//! structural [`schema_to_classes`](crate::schema_to_classes).
+//! structural lowering [`crate::compile_source`] now performs (formerly
+//! `schema_to_classes`, deleted with the SurrealQL fork — see
+//! `docs/W3.3-DELETE-GATE-MATRIX.md`).
 //!
 //! This is the lowering the SurrealQL-AST-trap spellbook
 //! (`specs/SURREAL-AST-TRAP.md`) and the W3 scope

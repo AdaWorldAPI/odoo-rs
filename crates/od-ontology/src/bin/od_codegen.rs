@@ -1,63 +1,56 @@
-//! `od-codegen` — read an SPO-triple ndjson corpus + optional RelationMap and
-//! write the rendered SurrealQL schema for an Odoo model focus.
+//! `od-codegen` — read an SPO-triple ndjson corpus and print either the
+//! table → canonical OGAR classid map (`--classids`) or the behavioral-arm
+//! lowering (`--actions`).
 //!
 //! # Usage
 //!
 //! ```sh
 //! # Slice 1: account.move alone
-//! od-codegen data/account_move.spo.ndjson --focus account_move
+//! od-codegen data/account_move.spo.ndjson --focus account_move --classids
 //!
-//! # Slice 2 + typed lift: 4 models, RelationMap overrides
+//! # Slice 2: 4 models, behavioral-arm lowering
 //! od-codegen data/slice_2.spo.ndjson \
 //!   --focus account_move,account_move_line,res_partner,res_company \
-//!   --relations data/slice_2.relations.ndjson \
-//!   -o /tmp/slice_2.surql --stats
+//!   --actions
 //!
 //! # Stdin pipeline
-//! cat data/slice_2.spo.ndjson | od-codegen - -f account_move
+//! cat data/slice_2.spo.ndjson | od-codegen - -f account_move --classids
 //! ```
 //!
-//! # End-to-end pipeline
+//! # `SurrealQL` is deprecated
 //!
-//! ```text
-//!   odoo/addons/  ─►  ruff_python_dto_check + odoo-blueprint-extractor (Python)
-//!                  ─►  triples.ndjson (22 245 SPO triples)
-//!                  ─►  od-codegen (THIS BINARY)
-//!                  ─►  schema.surql (DEFINE TABLE / FIELD / FUNCTION / EVENT)
-//!                  ─►  surrealdb
-//! ```
+//! **`SurrealQL` is deprecated** (operator ruling 2026-07-06: *"`SurrealQL` is
+//! absolutely deprecated. OGAR V3 for transpile substrate, lance-graph V3 for
+//! database."*). This binary used to default to rendering a `.surql` schema
+//! (`corpus_to_schema` → `Schema::to_sql`); that DDL-emit path — and the
+//! `-r/--relations`, `-o/--output`, `--validate`, `--stats` schema-diagnostics
+//! flags that only served it — has been deleted along with `surreal_ast.rs` /
+//! `emit.rs`. The two surviving modes (`--classids` / `--actions`) never
+//! depended on the bespoke DDL AST; they read straight off the SPO triples
+//! and the OGAR codebook. See `docs/W3.3-DELETE-GATE-MATRIX.md`.
 //!
 //! # Exit codes — `lance-graph#512` convention
 //!
 //! Following `lance-graph#512`'s degenerate-input-vs-generic-error split so
 //! wrapper scripts can react to the cause:
 //!
-//! - `0` — schema rendered successfully.
+//! - `0` — output printed successfully.
 //! - `1` — argument / I/O error (message on stderr).
 //! - `2` — degenerate input (empty / malformed ndjson, zero triples, zero
 //!   tables — the upstream extractor never produced anything meaningful).
 //!
 //! Pattern parity with `AdaWorldAPI/openproject-nexgen-rs#31` so the two
 //! CLIs behave identically across language fronts.
-//!
-//! # Deferred — `--validate` flag
-//!
-//! Reserved as a no-op stub. When wired, it will route the emitted DDL
-//! through `surrealdb_core::syn::parse` (path-dep on the AdaWorldAPI
-//! `surrealdb` fork) and exit 2 on parse failure — proving the projection
-//! emits valid SurrealQL, not just plausible-looking strings. Currently
-//! gated on disk-space headroom for the fork build; the CLI carries the
-//! flag so the hook lands when the dep wires in.
 
 #![cfg(feature = "cli")]
 
 use std::env;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
 
-use od_ontology::{corpus_to_schema, parse_ndjson, RelationMap, Schema, ToSql};
+use od_ontology::{model_of, parse_ndjson, render_classid, Triple};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -90,9 +83,9 @@ fn main() {
         }
     };
 
-    // Degenerate-input guard (#512): an empty triple stream silently emits
-    // an empty SurrealQL file, making downstream pipelines fail far from
-    // the cause. Exit 2 with a directive message naming the upstream fix.
+    // Degenerate-input guard (#512): an empty triple stream carries nothing
+    // to render either output mode from. Exit 2 with a directive message
+    // naming the upstream fix.
     if triples.is_empty() {
         eprintln!(
             "error: input contains zero triples — run the upstream extractor first \
@@ -102,47 +95,33 @@ fn main() {
         process::exit(2);
     }
 
-    // ── 2. Load optional RelationMap ──
-    let relations: Option<RelationMap> = match &parsed.relations {
-        Some(path) => match fs::read_to_string(path) {
-            Ok(s) => match RelationMap::from_ndjson(&s) {
-                Ok(m) => Some(m),
-                Err(e) => {
-                    eprintln!("error parsing relations ndjson: {e}");
-                    process::exit(2);
-                }
-            },
-            Err(e) => {
-                eprintln!("error reading relations file `{}`: {e}", path.display());
-                process::exit(1);
-            }
-        },
-        None => None,
-    };
-
-    if parsed.stats {
-        eprintln!(
-            "loaded {} triples, {} relation overrides",
-            triples.len(),
-            relations.as_ref().map_or(0, RelationMap::len),
-        );
-    }
-
-    // ── 3. Project ──
     let focus_owned: Vec<String> = parsed.focus.clone();
     let focus_refs: Vec<&str> = focus_owned.iter().map(String::as_str).collect();
-    let focus_opt: Option<&[&str]> = if focus_refs.is_empty() {
-        None
-    } else {
-        Some(&focus_refs)
-    };
 
-    let schema = corpus_to_schema(&triples, focus_opt, relations.as_ref());
+    // ── 2. `--actions` — print the behavioral-arm lowering (ActionDef) ──
+    if parsed.actions {
+        // `corpus_action_rows` is deprecated (the DO-arm now lives on OGAR's
+        // `CompiledClass.actions` via `compile_source`) but stays the
+        // kausal-parity witness for the corpus-side ndjson pipeline this CLI
+        // reads — see `ogar_actions.rs`'s module docs.
+        #[allow(deprecated)]
+        let rows = od_ontology::corpus_action_rows(&triples);
+        for (model, predicate, kind, detail) in rows {
+            // Respect --focus: only the focused models, when given.
+            if !focus_refs.is_empty() && !focus_refs.iter().any(|&f| f == model) {
+                continue;
+            }
+            println!("{model}.{predicate}\t{kind}\t{detail}");
+        }
+        return;
+    }
 
-    // Degenerate-output guard (#512): zero tables means the focus set
-    // didn't intersect any `(*, rdf:type, ogit:ObjectType)` rows. Rather
-    // than ship a no-op `.surql`, fail loudly with the cause.
-    if schema.tables.is_empty() {
+    // ── 3. `--classids` (default) — print table → OGAR render classid map ──
+    let tables = object_type_tables(&triples, &focus_refs);
+
+    // Degenerate-output guard (#512): zero tables means the focus set didn't
+    // intersect any `(*, rdf:type, ogit:ObjectType)` rows.
+    if tables.is_empty() {
         eprintln!(
             "error: projection emitted zero tables — focus set {:?} did not match any \
              `(*, rdf:type, ogit:ObjectType)` row in the {} input triples",
@@ -152,63 +131,41 @@ fn main() {
         process::exit(2);
     }
 
-    // ── 4. `--classids` — print table → OGAR render classid map ──
-    if parsed.classids {
-                {
-            for table in &schema.tables {
-                match od_ontology::render_classid(&table.name) {
-                    Some(id) => println!("{}\t0x{id:08X}", table.name),
-                    None => println!("{}\t(uncodified)", table.name),
-                }
-            }
-            return;
-        }
-    }
-
-    // ── 4b. `--actions` — print the behavioral-arm lowering (ActionDef) ──
-    if parsed.actions {
-                {
-            for (model, predicate, kind, detail) in od_ontology::corpus_action_rows(&triples) {
-                // Respect --focus: only the focused models, when given.
-                if !focus_refs.is_empty() && !focus_refs.iter().any(|&f| f == model) {
-                    continue;
-                }
-                println!("{model}.{predicate}\t{kind}\t{detail}");
-            }
-            return;
-        }
-    }
-
-    let sql = schema.to_sql();
-
-    // ── 5. `--validate` (deferred stub) ──
-    if parsed.validate {
+    if parsed.stats {
         eprintln!(
-            "warning: --validate is a deferred stub (surrealdb-core parser not wired yet); \
-             passing through unverified"
+            "loaded {} triples, {} tables matched",
+            triples.len(),
+            tables.len(),
         );
     }
 
-    // ── 6. Write ──
-    if let Err(e) = write_output(&parsed.output, &sql) {
-        eprintln!("error writing output: {e}");
-        process::exit(1);
+    for table in &tables {
+        match render_classid(table) {
+            Some(id) => println!("{table}\t0x{id:08X}"),
+            None => println!("{table}\t(uncodified)"),
+        }
     }
+}
 
-    if parsed.stats {
-        print_stats(&schema, triples.len());
-    }
+/// The distinct model names declared as `(*, rdf:type, ogit:ObjectType)`,
+/// filtered by `focus` (empty = no filter), sorted for deterministic output.
+fn object_type_tables(triples: &[Triple], focus: &[&str]) -> Vec<String> {
+    let mut tables: Vec<String> = triples
+        .iter()
+        .filter(|t| t.p == "rdf:type" && t.o == "ogit:ObjectType")
+        .map(|t| model_of(&t.s).to_string())
+        .filter(|m| focus.is_empty() || focus.contains(&m.as_str()))
+        .collect();
+    tables.sort_unstable();
+    tables.dedup();
+    tables
 }
 
 #[derive(Debug)]
 struct ParsedArgs {
     input: Input,
-    output: Output,
     focus: Vec<String>,
-    relations: Option<PathBuf>,
     stats: bool,
-    validate: bool,
-    classids: bool,
     actions: bool,
     help: bool,
 }
@@ -219,20 +176,10 @@ enum Input {
     Path(PathBuf),
 }
 
-#[derive(Debug)]
-enum Output {
-    Stdout,
-    Path(PathBuf),
-}
-
 fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     let mut input: Option<Input> = None;
-    let mut output: Option<Output> = None;
     let mut focus: Vec<String> = Vec::new();
-    let mut relations: Option<PathBuf> = None;
     let mut stats = false;
-    let mut validate = false;
-    let mut classids = false;
     let mut actions = false;
     let mut help = false;
     let mut i = 0;
@@ -240,8 +187,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         match args[i].as_str() {
             "-h" | "--help" => help = true,
             "--stats" => stats = true,
-            "--validate" => validate = true,
-            "--classids" => classids = true,
+            "--classids" => {} // the default/only non-actions mode; accepted for CLI compat
             "--actions" => actions = true,
             "-f" | "--focus" => {
                 i += 1;
@@ -250,24 +196,6 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
                 })?;
                 focus = value.split(',').map(|s| s.trim().to_string()).collect();
                 focus.retain(|s| !s.is_empty());
-            }
-            "-r" | "--relations" => {
-                i += 1;
-                let value = args
-                    .get(i)
-                    .ok_or_else(|| "-r/--relations requires a path argument".to_string())?;
-                relations = Some(PathBuf::from(value));
-            }
-            "-o" | "--output" => {
-                i += 1;
-                let value = args
-                    .get(i)
-                    .ok_or_else(|| "-o/--output requires a path argument".to_string())?;
-                output = Some(if value == "-" {
-                    Output::Stdout
-                } else {
-                    Output::Path(PathBuf::from(value))
-                });
             }
             other if other.starts_with("--") => {
                 return Err(format!("unknown flag `{other}`"));
@@ -279,12 +207,8 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
     }
     Ok(ParsedArgs {
         input: input.unwrap_or(Input::Stdin),
-        output: output.unwrap_or(Output::Stdout),
         focus,
-        relations,
         stats,
-        validate,
-        classids,
         actions,
         help,
     })
@@ -301,36 +225,11 @@ fn read_input(input: &Input) -> io::Result<String> {
     }
 }
 
-fn write_output(output: &Output, content: &str) -> io::Result<()> {
-    match output {
-        Output::Stdout => io::stdout().write_all(content.as_bytes()),
-        Output::Path(path) => fs::write(path, content),
-    }
-}
-
-fn print_stats(schema: &Schema, triple_count: usize) {
-    let tables = schema.tables.len();
-    let fields: usize = schema.tables.iter().map(|t| t.fields.len()).sum();
-    let indices: usize = schema.tables.iter().map(|t| t.indices.len()).sum();
-    let functions = schema.functions.len();
-    let events = schema.events.len();
-    let sql = schema.to_sql();
-    let unresolved = sql.matches("(child UNRESOLVED").count();
-    let via_typed = sql.matches("via typed-lift").count();
-    let via_conv = sql.matches("via convention").count();
-    eprintln!(
-        "schema: {tables} tables, {fields} fields, {indices} indices, \
-         {functions} functions (deferred bodies), {events} events \
-         ({via_typed} typed-lift / {via_conv} convention / {unresolved} unresolved) \
-         from {triple_count} triples",
-    );
-}
-
 const USAGE: &str = "\
-od-codegen — render SurrealQL schema from Odoo SPO-triple ndjson
+od-codegen — pull canonical OGAR classids / behavioral-arm rows from Odoo SPO-triple ndjson
 
 USAGE:
-    od-codegen [INPUT] [-f MODELS] [-r RELATIONS] [-o OUTPUT] [--stats] [--validate]
+    od-codegen [INPUT] [-f MODELS] [--classids | --actions] [--stats]
 
 ARGS:
     INPUT                       Path to SPO ndjson file, or `-` for stdin (default: stdin).
@@ -339,23 +238,16 @@ OPTIONS:
     -f, --focus MODELS          Comma-separated focus models
                                 (e.g. `account_move,res_partner,res_company`).
                                 Omit to project the entire corpus.
-    -r, --relations PATH        Optional RelationMap ndjson (typed-lift overrides
-                                for `OdooField.target` ground truth).
-    -o, --output PATH           Write SurrealQL to PATH instead of stdout. Use `-` for stdout.
-    --stats                     Print schema feature counts (tables / fields / events /
-                                typed-lift vs convention vs unresolved) to stderr.
-    --validate                  Reserved — when wired, routes the emitted DDL through
-                                `surrealdb_core::syn::parse` and exits 2 on syntax error.
-                                Currently a no-op stub (warns and passes through).
+    --stats                     Print triple / table counts to stderr.
     --classids                  Print the `table → canonical OGAR render classid (0xAABBCCDD)`
-                                map instead of DDL.
+                                map (the default mode).
     --actions                   Print the behavioral-arm lowering — one
                                 `model.method <TAB> kind <TAB> detail` row per ActionDef
                                 (kind = depends|guard). Respects --focus.
     -h, --help                  Show this help.
 
 EXIT CODES (lance-graph#512 convention):
-    0  schema rendered successfully
+    0  output printed successfully
     1  argument / I/O error (message on stderr)
     2  degenerate input (malformed ndjson, zero triples, zero tables)
 ";
@@ -365,29 +257,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_args_default_is_stdin_stdout_no_focus() {
+    fn parse_args_default_is_stdin_no_focus() {
         let p = parse_args(&[]).unwrap();
         assert!(matches!(p.input, Input::Stdin));
-        assert!(matches!(p.output, Output::Stdout));
         assert!(p.focus.is_empty());
-        assert!(p.relations.is_none());
         assert!(!p.stats);
-        assert!(!p.validate);
-        assert!(!p.classids);
         assert!(!p.actions);
     }
 
     #[test]
-    fn parse_args_classids_flag() {
+    fn parse_args_classids_flag_accepted() {
         let p = parse_args(&["--classids".into()]).unwrap();
-        assert!(p.classids);
+        assert!(!p.actions);
     }
 
     #[test]
     fn parse_args_actions_flag() {
         let p = parse_args(&["--actions".into()]).unwrap();
         assert!(p.actions);
-        assert!(!p.classids);
     }
 
     #[test]
@@ -395,17 +282,6 @@ mod tests {
         let p =
             parse_args(&["-f".into(), "account_move, res_partner ,res_company".into()]).unwrap();
         assert_eq!(p.focus, vec!["account_move", "res_partner", "res_company"],);
-    }
-
-    #[test]
-    fn parse_args_relations_long_and_short() {
-        let p1 = parse_args(&["-r".into(), "/tmp/r.ndjson".into()]).unwrap();
-        let p2 = parse_args(&["--relations".into(), "/tmp/r.ndjson".into()]).unwrap();
-        assert_eq!(
-            p1.relations.as_deref(),
-            Some(std::path::Path::new("/tmp/r.ndjson"))
-        );
-        assert_eq!(p1.relations, p2.relations);
     }
 
     #[test]
@@ -418,5 +294,41 @@ mod tests {
     fn parse_args_focus_missing_value_errors() {
         let err = parse_args(&["-f".into()]).expect_err("missing focus value must fail");
         assert!(err.contains("focus"));
+    }
+
+    #[test]
+    fn object_type_tables_filters_by_focus_and_dedupes() {
+        let triples = vec![
+            Triple {
+                s: "odoo:account_move".into(),
+                p: "rdf:type".into(),
+                o: "ogit:ObjectType".into(),
+                f: 1.0,
+                c: 1.0,
+            },
+            Triple {
+                s: "odoo:account_move.name".into(),
+                p: "rdf:type".into(),
+                o: "ogit:Property".into(),
+                f: 1.0,
+                c: 1.0,
+            },
+            Triple {
+                s: "odoo:res_partner".into(),
+                p: "rdf:type".into(),
+                o: "ogit:ObjectType".into(),
+                f: 1.0,
+                c: 1.0,
+            },
+        ];
+        assert_eq!(
+            object_type_tables(&triples, &[]),
+            vec!["account_move".to_string(), "res_partner".to_string()]
+        );
+        assert_eq!(
+            object_type_tables(&triples, &["account_move"]),
+            vec!["account_move".to_string()]
+        );
+        assert!(object_type_tables(&triples, &["nonexistent_model"]).is_empty());
     }
 }

@@ -1,4 +1,5 @@
-//! `od-ontology` — Odoo's business-logic ontology as a native SurrealDB schema.
+//! `od-ontology` — Odoo's business-logic ontology, lowered into the OGAR V3
+//! transpile substrate.
 //!
 //! # What this is
 //!
@@ -10,45 +11,44 @@
 //! (`lance_graph::graph::spo::odoo_ontology`) *is* that ontology in
 //! machine-readable form.
 //!
-//! This crate lowers that ontology into **native SurrealDB constructs** so the
-//! semantics live *in the database*, not marshalled into a Rust process:
+//! **`SurrealQL` is deprecated** (operator ruling 2026-07-06: *"`SurrealQL` is
+//! absolutely deprecated. OGAR V3 for transpile substrate, lance-graph V3 for
+//! database."*). This crate no longer lowers the ontology into a bespoke
+//! `SurrealQL` DDL AST; it lowers Odoo model source straight through the OGAR
+//! transpile substrate (`compile_source`) and pulls canonical classids
+//! (`concept_classid` / `render_classid`) from the shared OGAR codebook.
+//! Classes sink into the lance-graph V3 database (16-byte facet key,
+//! canon-high classid), not a `SurrealQL` string.
 //!
 //! ```text
-//!   SPO corpus  ──corpus_to_schema──►  Schema { tables, functions, events }
-//!                                          │ ToSql
-//!                                          ▼
-//!                              SurrealQL DDL (DEFINE TABLE / FIELD / FUNCTION / EVENT)
+//!   Odoo .py source  ──compile_source──►  Vec<CompiledClass>  (OGAR IR: Class + ActionDef + facet)
 //! ```
 //!
 //! # What this is NOT
 //!
-//! - **Not an ORM.** There is no sink-in marshalling layer. SurrealDB is the
-//!   runtime; Rust (later) is a thin query broker, never the owner of the logic.
-//! - **Not a codegen / migration tool.** That convenience layer (export typed
-//!   AST, snapshot, shelve) is the explicitly *deferred* tail — see the README.
+//! - **Not an ORM.** There is no sink-in marshalling layer.
+//! - **Not a `SurrealQL` codegen tool.** The former `corpus_to_schema` /
+//!   `ToSql` / `schema_to_classes` / `emit_via_ogar*` DDL-emit path has been
+//!   deleted (the `SurrealQL` fork); see `docs/W3.3-DELETE-GATE-MATRIX.md`.
 //!
 //! # Faithful now vs deferred
 //!
 //! The *reactive wiring* (which field recomputes over what, which guard fires,
 //! which method materialises which field, which relations link where) is 100%
-//! derivable from the corpus and lands immediately. The compute/guard *bodies*
-//! (Python expressions), exact field types, and cross-record child-table
-//! resolution are stubbed and port incrementally — the schema is a faithful
-//! skeleton-with-nerves on day one.
+//! derivable from the corpus. The compute/guard *bodies* (Python expressions)
+//! port incrementally.
 //!
-//! # Slice 1 — `account.move`
+//! # Pulling a canonical classid
 //!
 //! ```no_run
-//! use od_ontology::{corpus_to_schema, parse_ndjson, ToSql};
+//! use od_ontology::{compile_source, concept_classid};
 //!
-//! let ndjson = std::fs::read_to_string("data/account_move.spo.ndjson").unwrap();
-//! let triples = parse_ndjson(&ndjson).unwrap();
-//! let schema = corpus_to_schema(&triples, Some(&["account_move"]), None);
-//! println!("{}", schema.to_sql());
+//! let src = std::fs::read_to_string("account_move.py").unwrap();
+//! let classes = compile_source(&src);
+//! assert_eq!(concept_classid("account_move"), Some(0x0202));
 //! ```
 
 mod alignment;
-mod emit;
 mod inheritance;
 mod mro;
 mod ogar_actions;
@@ -58,18 +58,13 @@ mod ogar_actions;
 mod ogar;
 mod recompute_dag;
 mod relations;
-mod surreal_ast;
 mod triple;
 mod view_mask;
 
-#[allow(deprecated)] // legacy SurrealQL emits stay exported for the parity witness
-pub use ogar::{
-    compile_source, concept_classid, emit_source_via_ogar, emit_via_ogar, emit_via_ogar_annotated,
-    render_classid, schema_classids, schema_to_classes, ODOO_APP_PREFIX,
-};
+pub use ogar::{compile_source, concept_classid, render_classid, ODOO_APP_PREFIX};
 
-/// Behavioral-arm lowering — Odoo's reactive lifecycle → `ogar_vocab::ActionDef`
-/// (the sibling of [`schema_to_classes`]). See `specs/W3-BEHAVIORAL-ARM-SCOPE.md`.
+/// Behavioral-arm lowering — Odoo's reactive lifecycle → `ogar_vocab::ActionDef`.
+/// See `specs/W3-BEHAVIORAL-ARM-SCOPE.md`.
 #[allow(deprecated)] // corpus DO-arm stays exported as the kausal-parity witness
 pub use ogar_actions::{corpus_action_rows, corpus_to_actions};
 
@@ -85,7 +80,6 @@ pub use alignment::{
     ODOO_EDGE_WHITELIST, ODOO_INHERITS_FROM_FIBOFND_V1, ODOO_NAMESPACE_IRI, ODOO_SEED,
     ODOO_TTL_SOURCES,
 };
-pub use emit::corpus_to_schema;
 pub use inheritance::InheritanceMap;
 pub use mro::{Mro, MroError};
 pub use view_mask::{extract_view_fields, field_universe, mint_mask, MaskWords, ViewFields};
@@ -95,8 +89,4 @@ pub use view_mask::{extract_view_fields, field_universe, mint_mask, MaskWords, V
 pub use view_mask::{mint_wide_mask, WideMaskError};
 pub use recompute_dag::{MethodId, MethodKind, RecomputeDag};
 pub use relations::{Relation, RelationMap, RelationParseError};
-pub use surreal_ast::{
-    EventDefinition, FieldDefinition, FunctionDefinition, IndexDefinition, Kind, Schema,
-    TableDefinition, ToSql,
-};
 pub use triple::{member_of, model_of, parse_ndjson, ParseError, Triple};

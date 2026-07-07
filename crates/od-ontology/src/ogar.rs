@@ -1,128 +1,45 @@
-//! **Stage 1 — parallel emit.** Lowers the bespoke [`Schema`] onto
-//! `ogar_vocab::Class` (the canonical OGAR IR) and re-emits SurrealQL DDL
-//! through `ogar-adapter-surrealql`, *alongside* the native [`ToSql`] path —
-//! never replacing it.
+//! The OGAR substrate consumption surface.
 //!
-//! [`Schema`]: crate::Schema
-//! [`ToSql`]: crate::ToSql
+//! **`SurrealQL` is deprecated** (operator ruling 2026-07-06: *"`SurrealQL` is
+//! absolutely deprecated. OGAR V3 for transpile substrate, lance-graph V3 for
+//! database."*). This module used to also carry a "Stage 1 parallel emit"
+//! that lowered the bespoke `Schema` onto `ogar_vocab::Class` and re-emitted
+//! `SurrealQL` DDL through `ogar-adapter-surrealql`, alongside the (now also
+//! deleted) native hand-rolled `ToSql` AST. Both emit paths, and the bespoke
+//! `Schema`/`TableDefinition`/`FieldDefinition` AST they lowered from, are
+//! gone — deleted whole with `surreal_ast.rs` + `emit.rs`. There is no
+//! `SurrealQL` target left to emit; classes sink into the lance-graph V3
+//! database instead (16-byte facet key, canon-high classid).
 //!
-//! # Why
+//! What survives is the substrate-input lowering (`compile_source`) and the
+//! canonical classid pull — the parts of this module that never depended on
+//! the bespoke DDL AST in the first place.
 //!
-//! `od-ontology` and `ogar-adapter-surrealql` independently arrived at the
-//! same design: mirror `surrealdb-core`'s catalog shape, hand-write the DDL
-//! formatter, stay zero-dep on `surrealdb-core`. Two crates emitting the same
-//! catalog from the same kind of input is a fork that should be a dependency.
-//! This module is the beachhead: it proves the bespoke `Schema` maps onto
-//! `ogar_vocab::Class`, so a future stage can delete the hand-rolled AST +
-//! `ToSql` and route DDL through the shared emitter — making Odoo (ERP) and
-//! the planning forks (OpenProject / Redmine) *one reusable ontology* on the
-//! OGAR codebook (the `OdooPort` vocabulary anchor, OGAR #94).
+//! # Substrate-input lowering
 //!
-//! # What converges today (the `ogar_vocab::Class` IR covers)
+//! [`compile_source`] lowers Odoo model *source* (`.py` text) straight
+//! through the shared OGAR transpile substrate (OGAR #132): parse with
+//! `ruff_python_spo`, lift + mint with `compile_graph_python::<OdooPort>`.
+//! Each [`CompiledClass`] carries the lifted `ogar_vocab::Class` (structure:
+//! attributes + associations) plus the minted `facet` (identity: the render
+//! classid for codebook models) and the `actions` DO-arm
+//! (`ogar_vocab::ActionDef`, OGAR #164 AT-CARRY-1).
 //!
-//! | bespoke `Schema` construct | `ogar_vocab::Class` slot | emitted DDL |
-//! |---|---|---|
-//! | [`TableDefinition`] | [`Class`] | `DEFINE TABLE <t> SCHEMAFULL` |
-//! | scalar [`FieldDefinition`] (`bool`/`int`/`string`/…) | [`Attribute`] | `DEFINE FIELD … TYPE <scalar>` |
-//! | nullable scalar (`option<…>`) | [`Attribute`] + `required = Some(false)` | `… TYPE option<scalar>` |
-//! | `Many2one` (`record<X>`) | [`Association`] `BelongsTo` | `… TYPE record<X>` |
-//! | nullable `Many2one` | `BelongsTo` + `optional = Some(true)` | `… TYPE option<record<X>>` |
+//! # Canonical classid pull (the "pull OGAR via class" deliverable)
 //!
-//! # Documented Stage-2 gaps (NOT yet representable through the emitter)
-//!
-//! The convergence is partial *by design* — this stage measures the gap, it
-//! does not hide it. The native emit still owns these until the shared
-//! emitter grows to cover them (asserted as gaps in the convergence test):
-//!
-//! - **One2many / Many2many** (`array<record<…>>`): lowered to a `HasMany`
-//!   association, which the OGAR emitter renders as a `--` comment (the
-//!   non-owning side carries no column), *not* an `array<record<…>>` field.
-//! - **Computed fields** (`VALUE fn::… READONLY`): the field's *type* carries
-//!   over; its reactive `VALUE` + `READONLY` do not (that's the
-//!   `ActionDef` / `ClassView` surface, a separate lift).
-//! - **`DEFINE FUNCTION`** (compute/action stubs) and **`DEFINE EVENT`**
-//!   (reactive recompute + `@api.constrains` guards): no equivalent in the
-//!   `DEFINE TABLE`/`DEFINE FIELD`-only emitter yet.
-//! - **`DEFINE INDEX`** (`_sql_constraints` unique tuples): not part of the
-//!   OGAR IR; dropped.
+//! The functions below lower *identity*: they pull the canonical OGAR
+//! `classid` for an Odoo model straight from the [`OdooPort`] alias table —
+//! NO bridge object, NO registry, NO TTL hydration, just a pure static lookup
+//! over the shared codebook (OGAR #94). This is the consumer migration target
+//! (lance-graph #589 / OGAR `CONSUMER-MIGRATION-HOWTO`): a consumer names a
+//! surface concept and gets back the shared id that WoA `Stundenzettel`, SMB
+//! `Stundenzettel`, OpenProject/Redmine `TimeEntry`, and Odoo
+//! `account.analytic.line` all converge on (`BILLABLE_WORK_ENTRY`, the
+//! planner↔ERP billable-hours pin).
 
 use ogar_from_ruff::mint::{compile_graph_python, CompiledClass};
 use ogar_vocab::app::render_classid_for;
 use ogar_vocab::ports::{OdooPort, PortSpec};
-use ogar_vocab::{canonical_concept_name, Association, AssociationKind, Attribute, Class};
-
-use crate::surreal_ast::{FieldDefinition, Kind, Schema, TableDefinition};
-
-/// Lower a bespoke [`Schema`](crate::Schema) onto the canonical
-/// `ogar_vocab::Class` IR (the convergent `DEFINE TABLE` + `DEFINE FIELD`
-/// subset; see the module docs for the documented gaps).
-#[must_use]
-pub fn schema_to_classes(schema: &Schema) -> Vec<Class> {
-    schema.tables.iter().map(table_to_class).collect()
-}
-
-/// Emit SurrealQL DDL for `schema` through the shared `ogar-adapter-surrealql`
-/// emitter (the OGAR-canonical path), parallel to [`Schema::to_sql`].
-///
-/// [`Schema::to_sql`]: crate::ToSql::to_sql
-#[deprecated(since = "0.5.0", note = "SurrealQL is deprecated (operator ruling 2026-07-06): OGAR V3 is the transpile substrate, lance-graph V3 the database. Consume `compile_source` / `schema_to_classes` and sink the classes; DDL for the PostgreSQL system-of-record comes from the ClassView via ogar-adapter-postgres-ddl.")]
-#[must_use]
-pub fn emit_via_ogar(schema: &Schema) -> String {
-    ogar_adapter_surrealql::emit_surrealql_ddl(&schema_to_classes(schema))
-}
-
-/// [`emit_via_ogar`] DDL, with each codebook table's canonical OGAR concept
-/// **name** + full render classid stamped into its `DEFINE TABLE …
-/// COMMENT 'commercial_document (classid:0x02020002)'` clause — so the shared
-/// concept rides into `SurrealDB`'s own catalog metadata (queryable via
-/// `INFO FOR TABLE`), human-readable, not just the emitted `.surql` text. A
-/// `--` line-comment would evaporate at parse time; the `COMMENT` clause
-/// survives ingestion.
-///
-/// Purely additive over [`schema_to_classes`]: a table outside the codebook
-/// gets no classid comment (its structural DDL is byte-identical to the native
-/// [`emit_via_ogar`]). The concept name comes from
-/// [`ogar_vocab::canonical_concept_name`] — OGAR's `id → name` reverse map
-/// (the `PROBE-OGAR-ID-TO-CONCEPT-NAME` capability, OGAR #98) — never
-/// re-derived or copied locally, per the Core-First doctrine.
-#[deprecated(since = "0.5.0", note = "SurrealQL is deprecated (operator ruling 2026-07-06). The classid+concept identity now rides the V3 facet (`CompiledClass.facet`), not a DDL COMMENT clause.")]
-#[must_use]
-pub fn emit_via_ogar_annotated(schema: &Schema) -> String {
-    let classes: Vec<Class> = schema
-        .tables
-        .iter()
-        .map(|table| {
-            let mut class = table_to_class(table);
-            // Identity stamp: the canonical concept name + full render classid
-            // ride into the catalog COMMENT (the emitter renders
-            // `class.description` as `… COMMENT '<desc>'`). Uncodified tables
-            // keep `description = None` → no classid clause.
-            if let Some(lo) = concept_classid(&table.name) {
-                let render = render_classid_for::<OdooPort>(lo);
-                class.description = Some(match canonical_concept_name(lo) {
-                    Some(name) => format!("{name} (classid:0x{render:08X})"),
-                    // `lo` came from the codebook, so the reverse lookup is
-                    // total — the bare-hex arm is a defensive fallback only.
-                    None => format!("classid:0x{render:08X}"),
-                });
-            }
-            class
-        })
-        .collect();
-    ogar_adapter_surrealql::emit_surrealql_ddl(&classes)
-}
-
-// ── Substrate-input lowering (Phase 2 Stage B) ──────────────────────────
-//
-// The convergence's INPUT half: lower an Odoo model *source* (`.py` text)
-// straight through the shared OGAR transpile substrate (OGAR #132) — parse with
-// `ruff_python_spo`, lift + mint with `compile_graph_python::<OdooPort>` — instead
-// of re-deriving it through the bespoke `parse_ndjson -> corpus_to_schema ->
-// schema_to_classes` corpus path. This is the "85% pulled from OGAR" thinning:
-// `od-ontology` stops owning the lift and becomes a substrate caller. The shared
-// `ogar-adapter-surrealql` then emits the DDL — including the Stage-A
-// `array<record<…>>` for One2many/Many2many. Additive: the native path is
-// untouched, and the W3.3 fork-delete (Stage C) stays gated on the behaviour arm.
 
 /// Compile Odoo model source (`.py` text) to the canonical OGAR
 /// `Vec<CompiledClass>` via `ruff_python_spo` + `compile_graph_python::<OdooPort>`
@@ -137,69 +54,7 @@ pub fn compile_source(src: &str) -> Vec<CompiledClass> {
     compile_graph_python::<OdooPort>(&ruff_python_spo::extract_from_source(src))
 }
 
-/// Emit SurrealQL DDL for Odoo model *source* through the shared OGAR substrate
-/// and `ogar-adapter-surrealql`, stamping each codebook table's canonical
-/// concept name and full render classid into its `DEFINE TABLE … COMMENT` clause.
-///
-/// The substrate-input sibling of [`emit_via_ogar_annotated`] — which lowers the
-/// bespoke [`Schema`](crate::Schema); both converge on the same emitter, so the
-/// `source` path and the `corpus` path produce the same shape of DDL. A model
-/// outside the `OdooPort` codebook mints render classid `0` and gets no COMMENT;
-/// its structural DDL is unaffected (the stamp is identity-only — never
-/// lifecycle/behaviour, per the SurrealQL-AST-trap rule). The concept name comes
-/// from [`canonical_concept_name`] (OGAR's `id -> name` reverse map), never
-/// re-derived locally.
-#[deprecated(since = "0.5.0", note = "SurrealQL is deprecated (operator ruling 2026-07-06). Use `compile_source` — the `Vec<CompiledClass>` IS the product; storage is the lance-graph V3 substrate.")]
-#[must_use]
-pub fn emit_source_via_ogar(src: &str) -> String {
-    let classes: Vec<Class> = compile_source(src)
-        .into_iter()
-        .map(|cc| {
-            let render = cc.facet.facet_classid();
-            let mut class = cc.class;
-            // Codebook hit (non-zero render classid): stamp the concept name +
-            // render id into the catalog COMMENT (the emitter renders
-            // `class.description` as `… COMMENT '<desc>'`). The low u16 is the
-            // shared concept the reverse map keys on.
-            if render != 0 {
-                // canon-high (OGAR D-CLASSID-CANON-HIGH-FLIP, 2026-07-02):
-                // concept = HIGH u16, app render lens = LOW u16.
-                let concept = (render >> 16) as u16;
-                class.description = Some(match canonical_concept_name(concept) {
-                    Some(name) => format!("{name} (classid:0x{render:08X})"),
-                    None => format!("classid:0x{render:08X}"),
-                });
-            }
-            // Normalize relational comodel targets to TABLE form (dot ->
-            // underscore) so the emitted `record<…>` points at the SurrealDB
-            // table the schema defines. The substrate carries the raw dotted
-            // Odoo comodel (`res.partner`) as provenance, but a model `_name` is
-            // lowered to a table named `res_partner` (`_name.replace('.', '_')`),
-            // so an un-normalized `record<`res.partner`>` would dangle. The
-            // table-naming decision is the consumer's (Codex P2 on #20).
-            for assoc in &mut class.associations {
-                if let Some(target) = &assoc.class_name {
-                    assoc.class_name = Some(target.replace('.', "_"));
-                }
-            }
-            class
-        })
-        .collect();
-    ogar_adapter_surrealql::emit_surrealql_ddl(&classes)
-}
-
 // ── Canonical classid pull (the "pull OGAR via class" deliverable) ──────
-//
-// `schema_to_classes` above lowers *structure* (tables → `Class` shells with
-// attributes + associations). The functions below lower *identity*: they pull
-// the canonical OGAR `classid` for an Odoo model straight from the [`OdooPort`]
-// alias table — NO bridge object, NO registry, NO TTL hydration, just a pure
-// static lookup over the shared codebook (OGAR #94). This is the consumer
-// migration target (lance-graph #589 / OGAR `CONSUMER-MIGRATION-HOWTO`): a
-// consumer names a surface concept and gets back the shared id that WoA
-// `Stundenzettel`, SMB `Stundenzettel`, OpenProject/Redmine `TimeEntry`, and
-// Odoo `account.analytic.line` all converge on (`BILLABLE_WORK_ENTRY`, the
-// planner↔ERP billable-hours pin).
 
 /// Odoo's APP-prefix — the high `u16` of the 32-bit *render* classid per OGAR's
 /// `APP-CLASS-CODEBOOK-LAYOUT` (`classid = concept(hi) ‖ APP(lo) — canon-high per D-CLASSID-CANON-HIGH-FLIP`). The low
@@ -225,9 +80,7 @@ pub const ODOO_APP_PREFIX: u16 = OdooPort::APP_PREFIX;
 /// form (no `_`) passes through unchanged. The raw name is also tried as a
 /// fallback so a caller that already holds a dotted model name still resolves.
 ///
-/// Returns `None` for a model outside the codebook (e.g. `ir_cron`); the
-/// structural lowering in [`schema_to_classes`] still covers such a table — only
-/// the canonical-identity pull is codebook-gated.
+/// Returns `None` for a model outside the codebook (e.g. `ir_cron`).
 ///
 /// `account_move` → `0x0202` (`COMMERCIAL_DOCUMENT`), `account_analytic_line` →
 /// `0x0103` (`BILLABLE_WORK_ENTRY`, the cross-arm bridge), `res_partner` →
@@ -260,165 +113,9 @@ pub fn render_classid(model: &str) -> Option<u32> {
     concept_classid(model).map(render_classid_for::<OdooPort>)
 }
 
-/// Resolve every table in `schema` to its canonical OGAR concept classid,
-/// pairing the table name with its [`concept_classid`]. Tables outside the
-/// `OdooPort` codebook resolve to `None`. Order mirrors `schema.tables`.
-#[must_use]
-pub fn schema_classids(schema: &Schema) -> Vec<(String, Option<u16>)> {
-    schema
-        .tables
-        .iter()
-        .map(|t| (t.name.clone(), concept_classid(&t.name)))
-        .collect()
-}
-
-fn table_to_class(table: &TableDefinition) -> Class {
-    let mut class = Class::new(table.name.as_str());
-    for field in &table.fields {
-        lower_field(field, &mut class);
-    }
-    class
-}
-
-/// Route one [`FieldDefinition`] to a [`Class`] attribute or association,
-/// stripping a single `option<…>` layer into the IR-canonical nullability
-/// marker (`Kind::optional()` already normalises `option<option<T>>`).
-fn lower_field(field: &FieldDefinition, class: &mut Class) {
-    let (inner, optional) = match &field.kind {
-        Kind::Option(inner) => (inner.as_ref(), true),
-        other => (other, false),
-    };
-
-    match inner {
-        // Many2one → owning-side association (FK lives on this table).
-        Kind::Record(targets) => {
-            let mut assoc = Association::new(AssociationKind::BelongsTo, field.name.as_str());
-            assoc.class_name = Some(record_target(targets));
-            if optional {
-                assoc.optional = Some(true);
-            }
-            class.associations.push(assoc);
-        }
-        // One2many / Many2many → non-owning collection side. DOCUMENTED gap:
-        // the OGAR emitter renders HasMany as a comment, not an
-        // `array<record<…>>` field. Target preserved when the element is a
-        // record so a future emitter extension can recover it.
-        Kind::Array(elem) => {
-            let mut assoc = Association::new(AssociationKind::HasMany, field.name.as_str());
-            if let Kind::Record(targets) = elem.as_ref() {
-                assoc.class_name = Some(record_target(targets));
-            }
-            class.associations.push(assoc);
-        }
-        // Scalars. NOTE: `field.value` (computed VALUE) and `field.readonly`
-        // are intentionally not carried — the reactive/computed layer is a
-        // documented Stage-2 gap (see module docs).
-        scalar => {
-            let mut attr = Attribute::new(field.name.as_str());
-            attr.type_name = Some(scalar_surql_name(scalar).to_owned());
-            if optional {
-                attr.options.required = Some(false);
-            }
-            class.attributes.push(attr);
-        }
-    }
-}
-
-/// A `record<…>` target as a single SurrealQL identifier. Single-target
-/// `Many2one` is the common case; a polymorphic multi-target slot is joined
-/// with `|` so the emitter renders `record<a|b|c>` faithfully.
-fn record_target(targets: &[String]) -> String {
-    targets.join("|")
-}
-
-/// The SurrealQL canonical scalar name `ogar-adapter-surrealql`'s
-/// `map_type_to_surrealql` consumes as-is. Non-scalar kinds are handled by
-/// the caller; the catch-all keeps this total without an `unreachable!`.
-fn scalar_surql_name(kind: &Kind) -> &'static str {
-    match kind {
-        Kind::Bool => "bool",
-        Kind::Int => "int",
-        Kind::Float => "float",
-        Kind::Decimal => "decimal",
-        Kind::String => "string",
-        Kind::Datetime => "datetime",
-        // `Any`, plus the defensive catch-all for kinds the caller already
-        // peeled (`Record` / `Array` / a residual `Option`): emit `any`.
-        Kind::Any | Kind::Record(_) | Kind::Array(_) | Kind::Option(_) => "any",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::surreal_ast::{FieldDefinition, Kind, TableDefinition};
-
-    fn class_for(table: TableDefinition) -> Class {
-        let schema = Schema {
-            tables: vec![table],
-            functions: Vec::new(),
-            events: Vec::new(),
-        };
-        schema_to_classes(&schema).pop().expect("one class")
-    }
-
-    #[test]
-    fn table_becomes_class_with_same_name() {
-        let c = class_for(TableDefinition::new("account_move"));
-        assert_eq!(c.name, "account_move");
-    }
-
-    #[test]
-    fn required_scalar_becomes_attribute_without_optional_marker() {
-        let mut t = TableDefinition::new("account_move");
-        let mut f = FieldDefinition::new("account_move", "name");
-        f.kind = Kind::String; // bare = required
-        t.fields.push(f);
-        let c = class_for(t);
-        let attr = &c.attributes[0];
-        assert_eq!(attr.name, "name");
-        assert_eq!(attr.type_name.as_deref(), Some("string"));
-        assert_eq!(attr.options.required, None);
-    }
-
-    #[test]
-    fn nullable_scalar_carries_required_false() {
-        let mut t = TableDefinition::new("account_move");
-        let mut f = FieldDefinition::new("account_move", "ref");
-        f.kind = Kind::String.optional();
-        t.fields.push(f);
-        let c = class_for(t);
-        assert_eq!(c.attributes[0].options.required, Some(false));
-    }
-
-    #[test]
-    fn many2one_becomes_belongs_to_association() {
-        let mut t = TableDefinition::new("account_move");
-        let mut f = FieldDefinition::new("account_move", "partner_id");
-        f.kind = Kind::Record(vec!["res_partner".to_string()]).optional();
-        t.fields.push(f);
-        let c = class_for(t);
-        let a = &c.associations[0];
-        assert_eq!(a.kind, AssociationKind::BelongsTo);
-        assert_eq!(a.name, "partner_id");
-        assert_eq!(a.class_name.as_deref(), Some("res_partner"));
-        assert_eq!(a.optional, Some(true));
-    }
-
-    #[test]
-    fn one2many_becomes_has_many_association() {
-        let mut t = TableDefinition::new("account_move");
-        let mut f = FieldDefinition::new("account_move", "line_ids");
-        f.kind = Kind::Array(Box::new(Kind::Record(
-            vec!["account_move_line".to_string()],
-        )))
-        .optional();
-        t.fields.push(f);
-        let c = class_for(t);
-        let a = &c.associations[0];
-        assert_eq!(a.kind, AssociationKind::HasMany);
-        assert_eq!(a.class_name.as_deref(), Some("account_move_line"));
-    }
 
     // ── Canonical classid pull ──────────────────────────────────────────
 
@@ -472,120 +169,7 @@ mod tests {
         assert_eq!(ODOO_APP_PREFIX, 0x0002);
     }
 
-    #[test]
-    fn schema_classids_resolves_every_table_in_order() {
-        let schema = Schema {
-            tables: vec![
-                TableDefinition::new("account_move"),
-                TableDefinition::new("account_analytic_line"),
-                TableDefinition::new("ir_cron"),
-            ],
-            functions: Vec::new(),
-            events: Vec::new(),
-        };
-        let ids = schema_classids(&schema);
-        assert_eq!(
-            ids,
-            vec![
-                ("account_move".to_string(), Some(0x0202)),
-                ("account_analytic_line".to_string(), Some(0x0103)),
-                ("ir_cron".to_string(), None),
-            ]
-        );
-    }
-
-    // ── emit_via_ogar_annotated ─────────────────────────────────────────
-
-    #[test]
-    fn emit_via_ogar_annotated_stamps_classid_into_comment_clause() {
-        let schema = Schema {
-            tables: vec![
-                TableDefinition::new("account_move"),
-                TableDefinition::new("ir_cron"),
-            ],
-            functions: Vec::new(),
-            events: Vec::new(),
-        };
-        let ddl = emit_via_ogar_annotated(&schema);
-        // Codebook hit: account_move carries the canonical concept NAME +
-        // render classid 0x0202_0002 in a catalog COMMENT (single-quoted
-        // SurrealQL literal), so it survives SurrealDB ingestion rather than
-        // evaporating as a `--` line. The name comes from OGAR's reverse map.
-        assert!(
-            ddl.contains("COMMENT 'commercial_document (classid:0x02020002)'"),
-            "account_move must carry its concept name + classid in a COMMENT clause; got:\n{ddl}"
-        );
-        // Codebook miss: ir_cron stays unstamped — exactly one classid clause.
-        assert_eq!(
-            ddl.matches("classid:").count(),
-            1,
-            "only the codebook table (account_move) is stamped, not ir_cron; got:\n{ddl}"
-        );
-    }
-
-    #[test]
-    fn emit_via_ogar_annotated_is_additive_over_native_emit() {
-        // For a wholly-uncodified schema, no classid is stamped, so the
-        // annotated emit is byte-identical to the native parallel emit — the
-        // stamp is strictly additive, never a structural rewrite.
-        let schema = Schema {
-            tables: vec![TableDefinition::new("ir_cron")],
-            functions: Vec::new(),
-            events: Vec::new(),
-        };
-        assert_eq!(
-            emit_via_ogar_annotated(&schema),
-            emit_via_ogar(&schema),
-            "an uncodified-only schema must emit identical DDL via both paths"
-        );
-    }
-
-    // ── Substrate-input lowering (Phase 2 Stage B) ──────────────────────
-
-    #[test]
-    fn emit_source_via_ogar_lowers_odoo_source_to_annotated_ddl() {
-        // The substrate-input path end to end: Odoo .py source -> ruff_python_spo
-        // -> compile_graph_python::<OdooPort> -> shared ogar-adapter-surrealql. A
-        // minimal account.move with a scalar (char), a Many2one, and a One2many
-        // — also exercises the Stage-A array<record<…>>.
-        const SRC: &str = r#"
-from odoo import models, fields
-
-
-class AccountMove(models.Model):
-    _name = 'account.move'
-    name = fields.Char(required=True)
-    partner_id = fields.Many2one('res.partner')
-    line_ids = fields.One2many('account.move.line', 'move_id')
-"#;
-        let ddl = emit_source_via_ogar(SRC);
-        // Codebook identity rides into the catalog COMMENT via the minted facet
-        // + OGAR's reverse map (account.move -> COMMERCIAL_DOCUMENT 0x0202_0002).
-        assert!(
-            ddl.contains("COMMENT 'commercial_document (classid:0x02020002)'"),
-            "missing annotated COMMENT; got:\n{ddl}"
-        );
-        assert!(
-            ddl.contains("DEFINE TABLE account_move"),
-            "missing table; got:\n{ddl}"
-        );
-        // Many2one -> owning-side record<res_partner>; the comodel is normalized
-        // to TABLE form (matching the DEFINE TABLE name), not left dotted (P2).
-        assert!(
-            ddl.contains("record<res_partner>"),
-            "Many2one record<res_partner> missing / not normalized; got:\n{ddl}"
-        );
-        // One2many -> Stage-A array<record<account_move_line>> (normalized).
-        assert!(
-            ddl.contains("array<record<account_move_line>>"),
-            "One2many array<record<account_move_line>> missing; got:\n{ddl}"
-        );
-        // The raw dotted comodel must NOT leak into the DDL (P2 regression).
-        assert!(
-            !ddl.contains("`res.partner`") && !ddl.contains("`account.move.line`"),
-            "dotted comodel leaked into the DDL; got:\n{ddl}"
-        );
-    }
+    // ── compile_source (substrate-input lowering) ───────────────────────
 
     #[test]
     fn compile_source_skips_unparseable_and_resolves_classids() {
