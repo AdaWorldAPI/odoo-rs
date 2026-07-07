@@ -2,3 +2,6 @@
 **/*.rs.bk
 Cargo.lock
 .DS_Store
+
+# Agent isolation worktrees (git worktrees, not branch content)
+.claude/worktrees/
