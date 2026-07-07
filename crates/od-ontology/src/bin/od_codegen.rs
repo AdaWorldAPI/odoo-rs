@@ -100,6 +100,22 @@ fn main() {
 
     // ── 2. `--actions` — print the behavioral-arm lowering (ActionDef) ──
     if parsed.actions {
+        // Focus-miss guard (codex P2 on #25): validate the focus set against
+        // the table universe BEFORE the per-row filter, exactly like the
+        // `--classids` path below — otherwise a mistyped `--focus` exits 0
+        // with empty output instead of the documented exit-2 contract that
+        // `tests/exit_codes.rs` locks for the default mode.
+        let focused_tables = object_type_tables(&triples, &focus_refs);
+        if focused_tables.is_empty() {
+            eprintln!(
+                "error: projection emitted zero tables — focus set {:?} did not match any \
+                 `(*, rdf:type, ogit:ObjectType)` row in the {} input triples",
+                focus_owned,
+                triples.len(),
+            );
+            process::exit(2);
+        }
+
         // `corpus_action_rows` is deprecated (the DO-arm now lives on OGAR's
         // `CompiledClass.actions` via `compile_source`) but stays the
         // kausal-parity witness for the corpus-side ndjson pipeline this CLI
