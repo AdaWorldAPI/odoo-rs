@@ -79,7 +79,7 @@ cargo run   -p od-ontology --example emit_account_move  # print the DDL
 
 ## Slice 2 — `account.move` + `account.move.line` + `res.partner` + `res.company`
 
-The smallest meaningful expansion. **2 739 triples across 4 models** surface
+The smallest meaningful expansion. **3 065 triples across 4 models** surface
 three shapes single-model focus can't:
 
 1. **Back-ref resolution within the focus set.** `account_move.line_ids` lowers
@@ -100,7 +100,7 @@ three shapes single-model focus can't:
 cargo run -p od-ontology --example emit_slice_2
 # -- summary: 4 tables, 369 fields, 401 functions (deferred bodies),
 #    64 events (reactive + guards), 24 unresolved-child audit notes —
-#    from 2 739 triples
+#    from 3 065 triples
 ```
 
 ### Typed-lift bridge — `RelationMap`
@@ -238,7 +238,7 @@ odoo-rs/
 │   └── tests/                 #   slice-1 + slice-2 against real fixtures
 └── data/
     ├── account_move.spo.ndjson  # 1 647-triple slice-1 fixture
-    └── slice_2.spo.ndjson       # 2 739-triple slice-2 fixture (4 models)
+    └── slice_2.spo.ndjson       # 3 065-triple slice-2 fixture (4 models)
 ```
 
 ## Provenance
