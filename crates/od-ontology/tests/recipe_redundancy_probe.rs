@@ -248,8 +248,7 @@ fn ar_lifecycle_override_redundancy() {
     // ── ogar-emit consistency pin: the default-build mirror above must agree
     // with the REAL lift (`corpus_action_rows`), so the two classifications can
     // never silently drift, and every guard must render ONE recipe detail.
-    #[cfg(feature = "ogar-emit")]
-    {
+        {
         let rows = od_ontology::corpus_action_rows(&triples);
         let guard_rows: Vec<&(String, String, String, String)> =
             rows.iter().filter(|r| r.2 == "guard").collect();

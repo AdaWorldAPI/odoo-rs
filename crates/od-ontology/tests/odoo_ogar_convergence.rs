@@ -1,4 +1,3 @@
-#![cfg(feature = "ogar-emit")]
 //! Consumer-side OGAR convergence pin for `od-ontology`.
 //!
 //! This test file is the odoo-rs CONSUMER mirror of OGAR's own
@@ -11,10 +10,10 @@
 //! and the odoo-rs consumer have diverged and ALL downstream consumers
 //! (`WoA`, `SMB`, `OpenProject`, `lance-graph-planner`) see a broken pin.
 //!
-//! # Feature gate
-//! The whole module compiles to nothing when `ogar-emit` is off (the
-//! symbols are feature-gated in `od-ontology`). CI enables the feature;
-//! minimal builds do not.
+//! # No feature gate
+//! OGAR is always compiled into the binary (operator ruling 2026-07-06: no
+//! bridges — consumers consume `ogar-vocab` directly; the former `ogar-emit`
+//! opt-in is retired).
 
 use od_ontology::{
     class_ids, concept_classid, render_classid, schema_classids, Schema, TableDefinition,

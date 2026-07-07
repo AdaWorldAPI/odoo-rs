@@ -1,4 +1,4 @@
-//! **Stage 1 convergence proof** (feature `ogar-emit`).
+//! **Stage 1 convergence proof** (OGAR always compiled in).
 //!
 //! Emits the real `account.move` slice TWO ways from the same `Schema`:
 //! the native bespoke [`ToSql`] path and the canonical
@@ -8,11 +8,10 @@
 //! remaining Stage-2 *gaps* (computed `VALUE`/`READONLY`,
 //! `DEFINE FUNCTION`/`DEFINE EVENT`) so they can't silently change.
 //!
-//! Run with: `cargo test -p od-ontology --features ogar-emit`.
+//! Run with: `cargo test -p od-ontology`.
 //!
 //! [`ToSql`]: od_ontology::ToSql
 //! [`emit_via_ogar`]: od_ontology::emit_via_ogar
-#![cfg(feature = "ogar-emit")]
 
 use std::collections::BTreeSet;
 

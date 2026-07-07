@@ -431,7 +431,6 @@ fn resolve_odoo_unmapped_returns_none() {
 
 // ── §6: cross-validate with OGAR's OdooPort identity codebook ──────────────
 
-#[cfg(feature = "ogar-emit")]
 #[test]
 fn seeded_classes_have_compatible_ogar_identity() {
     use ogar_vocab::ports::{OdooPort, PortSpec};

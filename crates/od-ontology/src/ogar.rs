@@ -65,6 +65,7 @@ pub fn schema_to_classes(schema: &Schema) -> Vec<Class> {
 /// emitter (the OGAR-canonical path), parallel to [`Schema::to_sql`].
 ///
 /// [`Schema::to_sql`]: crate::ToSql::to_sql
+#[deprecated(since = "0.5.0", note = "SurrealQL is deprecated (operator ruling 2026-07-06): OGAR V3 is the transpile substrate, lance-graph V3 the database. Consume `compile_source` / `schema_to_classes` and sink the classes; DDL for the PostgreSQL system-of-record comes from the ClassView via ogar-adapter-postgres-ddl.")]
 #[must_use]
 pub fn emit_via_ogar(schema: &Schema) -> String {
     ogar_adapter_surrealql::emit_surrealql_ddl(&schema_to_classes(schema))
@@ -84,6 +85,7 @@ pub fn emit_via_ogar(schema: &Schema) -> String {
 /// [`ogar_vocab::canonical_concept_name`] — OGAR's `id → name` reverse map
 /// (the `PROBE-OGAR-ID-TO-CONCEPT-NAME` capability, OGAR #98) — never
 /// re-derived or copied locally, per the Core-First doctrine.
+#[deprecated(since = "0.5.0", note = "SurrealQL is deprecated (operator ruling 2026-07-06). The classid+concept identity now rides the V3 facet (`CompiledClass.facet`), not a DDL COMMENT clause.")]
 #[must_use]
 pub fn emit_via_ogar_annotated(schema: &Schema) -> String {
     let classes: Vec<Class> = schema
@@ -147,6 +149,7 @@ pub fn compile_source(src: &str) -> Vec<CompiledClass> {
 /// lifecycle/behaviour, per the SurrealQL-AST-trap rule). The concept name comes
 /// from [`canonical_concept_name`] (OGAR's `id -> name` reverse map), never
 /// re-derived locally.
+#[deprecated(since = "0.5.0", note = "SurrealQL is deprecated (operator ruling 2026-07-06). Use `compile_source` — the `Vec<CompiledClass>` IS the product; storage is the lance-graph V3 substrate.")]
 #[must_use]
 pub fn emit_source_via_ogar(src: &str) -> String {
     let classes: Vec<Class> = compile_source(src)
@@ -594,5 +597,56 @@ class AccountMove(models.Model):
         );
         assert_eq!(compiled.len(), 1);
         assert_eq!(compiled[0].facet.facet_classid(), 0x0202_0002);
+    }
+
+    /// AT-CONSUME (W3.3 delete gate, `docs/W3.3-DELETE-GATE-MATRIX.md`): the
+    /// DO-arm that OGAR #164 (AT-CARRY-1) put on `CompiledClass` is actually
+    /// consumed on this side — a live-source compile carries one `ActionDef`
+    /// per method with its body facts, and the lifecycle classification agrees
+    /// with the corpus-side mirror (`corpus_to_actions`'s prefix convention,
+    /// `MethodKind::classify`). Before #164 `compile_source` dropped the whole
+    /// behaviour arm; deleting the native fork would have lost the reactive
+    /// wiring with no consumer ever noticing.
+    #[test]
+    fn compile_source_carries_the_do_arm() {
+        let compiled = compile_source(concat!(
+            "from odoo import api, models, fields\n\n\n",
+            "class AM(models.Model):\n",
+            "    _name = 'account.move'\n",
+            "    amount_total = fields.Monetary(compute='_compute_amount')\n\n",
+            "    @api.depends('line_ids.balance')\n",
+            "    def _compute_amount(self):\n",
+            "        for move in self:\n",
+            "            move.amount_total = sum(move.line_ids.mapped('balance'))\n",
+        ));
+        assert_eq!(compiled.len(), 1);
+        let cc = &compiled[0];
+
+        // The DO-arm rides the compiled class (AT-CARRY-1 consumed).
+        assert_eq!(cc.actions.len(), 1, "one ActionDef per harvested method");
+        let act = &cc.actions[0];
+        assert_eq!(act.predicate, "_compute_amount");
+        // the frontend normalizes `_name = 'account.move'` to the table form
+        assert_eq!(act.object_class, "account_move");
+        assert!(
+            act.identity.ends_with("::action_def::_compute_amount"),
+            "identity carries the action-def address, got {}",
+            act.identity
+        );
+
+        // Classification parity with the corpus-side mirror: the carried
+        // predicate classifies as Compute under the same prefix convention
+        // `corpus_to_actions` uses — the two arms can never silently drift.
+        assert_eq!(
+            crate::MethodKind::classify(&act.predicate),
+            crate::MethodKind::Compute,
+            "carried DO-arm predicate must classify as the corpus arm would"
+        );
+
+        // The THINK arm still carries the reactive schema half alongside.
+        assert!(
+            !cc.class.computed_fields.is_empty(),
+            "computed_fields (THINK arm) and actions (DO arm) travel together"
+        );
     }
 }

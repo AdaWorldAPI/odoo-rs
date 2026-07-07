@@ -51,31 +51,31 @@ mod alignment;
 mod emit;
 mod inheritance;
 mod mro;
-#[cfg(feature = "ogar-emit")]
 mod ogar_actions;
-#[cfg(feature = "ogar-emit")]
-mod ogar_bridge;
+// The OGAR substrate consumption surface (formerly `ogar_bridge` — renamed:
+// the bridge pattern is deprecated per CONSUMER-BRIDGE-DEPRECATION; this is a
+// direct, always-compiled-in consumer of `ogar-vocab` + the transpile substrate).
+mod ogar;
 mod recompute_dag;
 mod relations;
 mod surreal_ast;
 mod triple;
 mod view_mask;
 
-#[cfg(feature = "ogar-emit")]
-pub use ogar_bridge::{
+#[allow(deprecated)] // legacy SurrealQL emits stay exported for the parity witness
+pub use ogar::{
     compile_source, concept_classid, emit_source_via_ogar, emit_via_ogar, emit_via_ogar_annotated,
     render_classid, schema_classids, schema_to_classes, ODOO_APP_PREFIX,
 };
 
 /// Behavioral-arm lowering — Odoo's reactive lifecycle → `ogar_vocab::ActionDef`
 /// (the sibling of [`schema_to_classes`]). See `specs/W3-BEHAVIORAL-ARM-SCOPE.md`.
-#[cfg(feature = "ogar-emit")]
+#[allow(deprecated)] // corpus DO-arm stays exported as the kausal-parity witness
 pub use ogar_actions::{corpus_action_rows, corpus_to_actions};
 
 /// Re-export the canonical OGAR codebook constants (e.g.
 /// `class_ids::BILLABLE_WORK_ENTRY`) so consumers can symbol-bind to the
 /// shared ids rather than copy hex literals.
-#[cfg(feature = "ogar-emit")]
 pub use ogar_vocab::class_ids;
 
 pub use alignment::{
