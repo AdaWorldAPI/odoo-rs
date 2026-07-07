@@ -1,5 +1,17 @@
 # OGAR vocabulary + lift-coverage surface (map, not a plan)
 
+> **⚠ STALE ROWS — REGRADE 2026-07-07 (council R5-4).** This map was read at
+> OGAR pin `748ba11` (pre-#168). Since then **AT-CARRY-2 landed** (OGAR #168 +
+> ruff #49): `lift_actions` NOW populates `kausal` — Arm A
+> `KausalSpec::Depends{paths}` from `Field::depends_on` for compute targets,
+> Arm B `Constrains`/`Onchange` from the decorator facts, plus the new
+> `ActionDef.raises` slot. Every row below saying kausal is "NEVER-SET" /
+> "always None" describes the OLD pin, not OGAR main. Live proof:
+> `src/ogar.rs::kausal_parity_pinned_ogar_vs_corpus_witness` +
+> `tests/real_source_compile.rs` (92 kausal-carrying ActionDefs from the real
+> account_move.py). Still true at HEAD: `body_source` never populated;
+> `Class.methods` never assigned; THROW exception type has no slot.
+
 **Source read.** Local `/home/user/OGAR` HEAD (`f5bb789`) predates PR #164's
 review-fix commit; `origin/main` (`0dad0c3201e4b...`, fetched via
 `git fetch origin main -q`) is **7 commits ahead** of the requested pin
