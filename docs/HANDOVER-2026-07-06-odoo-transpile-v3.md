@@ -86,15 +86,30 @@ is noise — never rewrite inherited history to satisfy it.
 ## 2. The method (OGAR V3 transpile), so you don't re-derive it
 
 Canonical doc: **ruff `.claude/knowledge/fuzzy-recipe-codebook.md`** (READ IT).
+
+**Two substrates, SAME format, OPPOSITE purpose (operator correction
+2026-07-07 — do not conflate):**
+- **OGAR V3 = the COMPILE-TIME substrate (a COMPILER IR).** Uses the 16-byte
+  facet / SPOG format, but its job is *compilation*: `CompiledClass{class,
+  facet, actions}` is compiler output, produced at compile time. This is what
+  the odoo→odoo-rs transpile PRODUCES.
+- **lance-graph V3 = the STORAGE database (runtime).** Same format, different
+  job (persist/query). A DOWNSTREAM runtime concern — **NOT** the transpile
+  completion criterion, and NOT a mandatory W2 "sink" the transpile blocks on.
+
 Pipeline: source → `ruff_python_spo` (fingerprint quartet `writes/reads/raises/
 calls` + J1 `guarded_writes` on `ruff_spo_triplet::Function`) → `expand()`
-triples → `compile_graph_python::<OdooPort>` → `CompiledClass{class, facet,
-actions}` → **lance-graph V3 database** (16-byte facet key = canon-high classid
-+ 12B payload; Odoo reading = **L6 3×(8:8:8:8) SPOG**; 512-byte CANON node
-`key(16)|edges(16)|value(480)`). Behaviour lowers to `ActionDef`/`KausalSpec`
-via the **language-free recipe centroids** (Guard/Default/Compute/Normalize/
-Cascade/Compensate) — **never** to DDL. There is a `fuzzy-proposer` agent for
-this exact cooking.
+triples → `compile_graph_python::<OdooPort>` → **`CompiledClass` (the compile
+substrate)** → **SDK materialization** `ogar_from_ruff::emit::{emit_rust,
+emit_python, emit_csharp}` — the compile substrate now materializes into **3
+languages** (OGAR #177; proven on `account.move` in
+`src/ogar.rs::odoo_source_materializes_to_the_foreign_consumer_sdk`).
+`emit_rust` IS the odoo-rs materialization. Behaviour lowers to
+`ActionDef`/`KausalSpec` via the **language-free recipe centroids** (Guard/
+Default/Compute/Normalize/Cascade/Compensate) — **never** to DDL. There is a
+`fuzzy-proposer` agent for this exact cooking. (facet = canon-high classid +
+12B payload; Odoo reading = **L6 3×(8:8:8:8) SPOG** — the format, shared by
+both substrates.)
 
 Two DO-arm pipelines exist (don't conflate): odoo-rs's **deprecated**
 `corpus_to_actions` (populates `kausal`, now the parity witness) vs OGAR's
@@ -163,10 +178,21 @@ that `NATIVE-BEHAVIOUR-SEMANTICS.md` §finding-6 names (prefix vs
 `MethodKind::classify` vs bare `raises`) — pick the OGAR classification as
 canonical and pin the divergence, don't paper it.
 
-**W2 — lance-graph V3 database sink, via the HOT-PLUG recipe (REVISED
-2026-07-07; Opus plan first).** The old "invent a sink" framing is
-SUPERSEDED by the plug-and-play migration (§2b). The path is now the
-tesseract-rs #13/#14 template, applied to Odoo:
+**W2 — CORRECTED 2026-07-07: the transpile completes at the compile
+substrate + SDK, NOT at a lance-graph sink.** The odoo→odoo-rs transpile
+"completes" when odoo source lowers to `CompiledClass` (the OGAR V3 compile
+substrate) AND materializes via the SDK (`emit_rust` for odoo-rs; also
+Python/C#) with the behaviour arm carried (W1 kausal). That path is essentially
+DONE and proven (`odoo_source_materializes_to_the_foreign_consumer_sdk`
+green) — what remains for *transpile* completeness is W1 (kausal parity) +
+W3 (delete the deprecated native fork). **lance-graph V3 storage is a SEPARATE
+runtime concern, not the transpile finish line.**
+
+**W2′ (optional, downstream) — lance-graph V3 STORAGE, via the HOT-PLUG
+recipe.** If/when Odoo classes need to be PERSISTED/queried in the lance-graph
+V3 database (a runtime storage feature, distinct from the transpile), use the
+plug-and-play migration (§2b) — the tesseract-rs #13/#14 template applied to
+Odoo:
   1. **Authority (OGAR PR):** declare an `odoo_actions` domain table in
      `ogar-vocab` next to `ocr_actions` — one `ActionDef` per Odoo behaviour
      capability on the already-minted canon-high concepts (`0x0202`
