@@ -219,6 +219,17 @@ fn body_triage_accidentally_imperative_ratio() {
     let n_fail = resolved.iter().filter(|h| h.verdict == Verdict::Fail).count();
     let n_unresolved = arm.len() - n_resolved;
 
+    // ── Q8 diagnostic: NAME the behavioural-arm FAIL hooks (the imperative
+    // tail counted in n_fail), each with its VerbClass. Enumeration only —
+    // does not alter the triage semantics or any drift-fuse below.
+    let mut fail_hooks: Vec<(&String, &Hook)> =
+        arm.iter().copied().filter(|(_, h)| h.verdict == Verdict::Fail).collect();
+    fail_hooks.sort_by_key(|(name, _)| (*name).clone());
+    eprintln!("── Q8: the {} order-dependent tail hooks, named ──", fail_hooks.len());
+    for (name, h) in &fail_hooks {
+        eprintln!("  {name:<40} {:?}", h.verb);
+    }
+
     let pct = |num: usize, den: usize| -> f64 {
         if den == 0 { 0.0 } else { 100.0 * num as f64 / den as f64 }
     };
