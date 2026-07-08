@@ -212,13 +212,29 @@ fn contract_nav_brick_agrees_with_the_bfs_oracle() {
 
     let (edges, _) = extract_odoo_nav_edges_with_report(&data_root(), &vocab());
 
-    // Universe = every node in the harvested graph, sorted; position = index.
-    let mut universe: Vec<&str> = edges
-        .iter()
-        .flat_map(|e| [e.source.as_str(), e.target.as_str()])
-        .collect();
+    // Universe = the SERVED closed vocabulary + the synthetic menu root —
+    // deliberately NOT derived from the harvested edges (codex P2 on #31: an
+    // edge-derived universe auto-declares every endpoint a screen, so a
+    // dangling click to an out-of-vocab target could never fail the
+    // exact-equality connectivity check).
+    let mut universe: Vec<&str> = SCREENS.to_vec();
+    universe.push("menu");
     universe.sort_unstable();
     universe.dedup();
+    // Closed-vocab guard: every harvested endpoint must be a declared screen
+    // BEFORE any ComputeEdge is minted. Today the upstream arm vocab-gates
+    // targets (and this fixture's sources are in-vocab models), so this holds;
+    // a harvester regression emitting a stray endpoint fails HERE, loudly,
+    // instead of silently widening the screen universe.
+    for e in &edges {
+        for endpoint in [e.source.as_str(), e.target.as_str()] {
+            assert!(
+                universe.contains(&endpoint),
+                "edge endpoint `{endpoint}` is outside the closed SCREENS \
+                 vocabulary (+ menu root) — dangling click or source drift"
+            );
+        }
+    }
     let pos = |name: &str| -> u8 {
         u8::try_from(universe.iter().position(|n| *n == name).expect("in universe"))
             .expect("fixture universe is tiny")
