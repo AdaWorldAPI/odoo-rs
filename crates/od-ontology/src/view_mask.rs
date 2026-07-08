@@ -441,20 +441,24 @@ pub fn mint_wide_mask(
     universe: &[String],
     present: &[String],
 ) -> Result<lance_graph_contract::WideFieldMask, WideMaskError> {
-    if universe.len() > 256 {
-        return Err(WideMaskError::UniverseExceedsSocCap {
-            fields: universe.len(),
-        });
-    }
-    let present_set: BTreeSet<&str> = present.iter().map(String::as_str).collect();
-    #[allow(clippy::cast_possible_truncation)] // guarded: universe.len() <= 256 above
-    let positions: Vec<u8> = universe
-        .iter()
-        .enumerate()
-        .filter(|(_, field)| present_set.contains(field.as_str()))
-        .map(|(i, _)| i as u8)
-        .collect();
-    Ok(lance_graph_contract::WideFieldMask::from_positions(&positions))
+    // Council Q6 follow-up (lance-graph #669): the domain-blind membership +
+    // 256-SOC-cap logic now lives ONCE upstream as a ClassView brick
+    // (`WideFieldMask::from_universe_present`), so this consumer delegates
+    // instead of re-implementing the positions loop — the two minters can no
+    // longer disagree by construction. We keep `WideMaskError` as the
+    // crate-local error shape (and `MaskWords` as the dep-free harvest-side
+    // artifact), mapping the contract's cap error onto it.
+    let universe_refs: Vec<&str> = universe.iter().map(String::as_str).collect();
+    let present_refs: Vec<&str> = present.iter().map(String::as_str).collect();
+    lance_graph_contract::class_view::WideFieldMask::from_universe_present(
+        &universe_refs,
+        &present_refs,
+    )
+    .map_err(|e| match e {
+        lance_graph_contract::class_view::WideMaskCapError::UniverseExceedsSocCap { fields } => {
+            WideMaskError::UniverseExceedsSocCap { fields }
+        }
+    })
 }
 
 #[cfg(all(test, feature = "fieldmask"))]
