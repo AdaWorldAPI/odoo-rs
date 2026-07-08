@@ -20,9 +20,12 @@
 //!    fails → re-measure, re-pin, say so in the commit).
 //! 3. **Connectivity probe** — menu-rooted reachability over the harvested
 //!    graph (the odoo-rs analog of op-nexgen's boot-time klickweg check).
-//!    lance-graph-contract exposes no nav-connectivity API today, so the
-//!    BFS lives in this probe; if/when the contract grows one, this probe
-//!    delegates (named ask, not hidden).
+//!    The named contract ask LANDED (lance-graph `contract::class_view::
+//!    {screens_reachable_from, nav_is_fully_connected}`, the JUMP half of
+//!    the topology Lego kit): under the `fieldmask` feature this probe
+//!    DELEGATES to the brick, keeping the local BFS as an independent
+//!    oracle and pinning their agreement — two implementations, one
+//!    answer, or the test fails loud.
 //! 4. **View-skin parity** — the upstream `extract_odoo_view_field_sets`
 //!    (fourth skin, hop-exact since ruff #67) agrees with this repo's
 //!    hop-aware `extract_view_fields` on the shared surface: top-level
@@ -194,4 +197,72 @@ fn upstream_view_skin_matches_local_top_level_fields() {
     );
     // And on this input the closed vocab IS the local set, so fields == referenced.
     assert_eq!(upstream.fields, upstream.referenced);
+}
+
+/// 3b — the contract brick (JUMP half of the topology kit) agrees with the
+/// local BFS oracle on the same harvested graph, and its exact-equality
+/// connectivity semantics behave as documented. Runs under `fieldmask`
+/// (lance-graph-contract is an optional dep of this crate).
+#[cfg(feature = "fieldmask")]
+#[test]
+fn contract_nav_brick_agrees_with_the_bfs_oracle() {
+    use lance_graph_contract::class_view::{
+        ComputeEdge, WideFieldMask, nav_is_fully_connected, screens_reachable_from,
+    };
+
+    let (edges, _) = extract_odoo_nav_edges_with_report(&data_root(), &vocab());
+
+    // Universe = every node in the harvested graph, sorted; position = index.
+    let mut universe: Vec<&str> = edges
+        .iter()
+        .flat_map(|e| [e.source.as_str(), e.target.as_str()])
+        .collect();
+    universe.sort_unstable();
+    universe.dedup();
+    let pos = |name: &str| -> u8 {
+        u8::try_from(universe.iter().position(|n| *n == name).expect("in universe"))
+            .expect("fixture universe is tiny")
+    };
+
+    // Map harvested edges onto the brick's `ComputeEdge` representation
+    // (target = destination screen, inputs = source screens). The
+    // `&'static [u8]` inputs are leaked — bounded, test-only.
+    let compute_edges: Vec<ComputeEdge> = edges
+        .iter()
+        .map(|e| ComputeEdge {
+            target: pos(&e.target),
+            inputs: Box::leak(vec![pos(&e.source)].into_boxed_slice()),
+        })
+        .collect();
+
+    // ── Delegated reachability == BFS oracle (plus the root itself, which
+    //    the brick always includes) ──
+    let reached = screens_reachable_from(pos("menu"), &compute_edges);
+    let reached_names: Vec<&str> = universe
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| reached.has(u8::try_from(*i).expect("tiny")))
+        .map(|(_, n)| *n)
+        .collect();
+    assert_eq!(
+        reached_names,
+        vec!["account_account", "account_analytic_line", "menu"],
+        "contract brick must agree with the BFS oracle (root included by the brick)"
+    );
+
+    // ── Exact-equality connectivity semantics ──
+    // Full screen universe: NOT fully connected (the Shape-A account_move
+    // component is disjoint from the menu root in this fixture slice).
+    let universe_refs: Vec<&str> = universe.clone();
+    let all_screens = WideFieldMask::from_universe_present(&universe_refs, &universe_refs)
+        .expect("fixture universe is far under the 256-SoC cap");
+    assert!(
+        !nav_is_fully_connected(pos("menu"), &compute_edges, &all_screens),
+        "the disjoint Shape-A component must fail full connectivity"
+    );
+    // Restricted to the menu-reachable screens: exactly connected.
+    assert!(
+        nav_is_fully_connected(pos("menu"), &compute_edges, &reached),
+        "reached == screens is the brick's exact-equality invariant"
+    );
 }
