@@ -1,5 +1,23 @@
 # D-POST-SEQ — GoBD gapless Belegnummer routing for `account.move._post`
 
+> **(council Q5, 2026-07-08): retargeted from deprecated SurrealQL to the
+> V3 storage matrix.** SurrealQL is ABSOLUTELY DEPRECATED per operator
+> directive 2026-07-06 ("OGAR V3 for transpile substrate, lance-graph V3
+> for database"). The surrealdb-fork `DEFINE SEQUENCE` extension proposed
+> as "Option B" below is DEAD — there is no substrate to extend. The
+> gapless mechanism now targets **PostgreSQL** directly: the counter row
+> under `SELECT … FOR UPDATE`, in the same transaction as the facet-table
+> INSERT (`ogar-adapter-postgres-ddl::emit_facet_table_ddl`), with
+> lance-graph V3 as the read hot-path over the same data. This row-lock
+> mechanism **is** the resolution — no PG-side "extend the core"
+> counterpart is needed, because `SELECT … FOR UPDATE` on an ordinary row
+> is already the in-DB gapless primitive on PostgreSQL. Everything below
+> is the historical reasoning trail (source-verified against the
+> now-deprecated surrealdb fork) that established the PRINCIPLE — gapless
+> numbering needs a single-transaction pessimistic lock, never a
+> batch-allocated sequence primitive — which carries over to PostgreSQL
+> unchanged. Read it as **provenance**, not as the live storage target.
+>
 > **Status:** `RESOLVED` (2026-06-17) — **Option C (HYBRID)**, mechanism
 > corrected three times through the 8-agent council. Verdict baked into
 > [`../_post.md`](../_post.md). Resolution log at the bottom of this file.
@@ -177,3 +195,15 @@ Core convenience (B).
   unimplemented and gated on the disk-gated fork build. NO surrealdb
   client dep yet — keeps workspace `cargo check` cheap on the
   constrained host.
+- 2026-07-08 — **council Q5: retargeted to the V3 storage matrix.**
+  SurrealQL deprecated (operator, 2026-07-06). Option B (surrealdb-fork
+  `DEFINE SEQUENCE` extension) is DEAD — no substrate to extend. The
+  gapless mechanism (originally Option A) now targets PostgreSQL
+  directly: `SELECT … FOR UPDATE` on the counter row, in the same
+  transaction as the facet-table INSERT
+  (`ogar-adapter-postgres-ddl::emit_facet_table_ddl`), with lance-graph
+  V3 as the read hot-path. No parallel substrate PR is needed — the
+  row-lock IS the resolution on PostgreSQL. `od-posting`'s trait API and
+  the four invariants are unchanged; only the storage vocabulary in
+  `_post.md` and this file was retargeted. See `crates/od-posting/src/
+  lib.rs` for the updated module doc.
