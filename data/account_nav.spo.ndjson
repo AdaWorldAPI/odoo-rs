@@ -1,0 +1,3 @@
+{"s":"odoo:account_move","p":"navigates_to","o":"odoo:account_move","f":0.85,"c":0.75}
+{"s":"odoo:menu","p":"navigates_to","o":"odoo:account_account","f":0.85,"c":0.75}
+{"s":"odoo:menu","p":"navigates_to","o":"odoo:account_analytic_line","f":0.85,"c":0.75}
