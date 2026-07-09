@@ -1,0 +1,11 @@
+[package]
+name = "od-server"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/AdaWorldAPI/odoo-rs"
+description = "Thin HTTP host for the Odoo→OGAR transpiler frontend. Binds 0.0.0.0:$PORT (Railway PaaS pattern) and serves the `od-codegen` capability — classid resolution + action-row lowering — over HTTP by invoking the proven CLI. Deliberately decoupled from od-ontology's internal API: the CLI is the contract, so this host never drifts from what `od-codegen` actually emits."
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
