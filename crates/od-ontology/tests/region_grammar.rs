@@ -10,11 +10,11 @@
 //! arch-token → region map, and that every region is one of the six
 //! canonical names (a malformed row can never silently mis-dock).
 //!
-//! This is the config half of the three-edit recipe (Edit 1 vocab = DONE on
-//! ruff main; this pins the convention config). Edits 2 (the ruff Odoo
-//! `docked_at` harvester arm) + 3 (the `[regions]` digest section) are the
-//! remaining [H] work named in the doc — a full arch→region harvest test
-//! lands with the arm.
+//! This pins the convention-config half. Edit 1 (vocab) is on ruff main;
+//! Edit 2 (the ruff Odoo `docked_at` harvester arm,
+//! `ruff_python_spo::extract_odoo_view_regions`) is built on branch
+//! `claude/odoo-region-grammar-arm`; Edit 3 (the `[regions]` digest over the
+//! real harvest) is `tests/region_digest.rs`. All three now exist.
 
 use ruff_spo_triplet::parse;
 
@@ -51,6 +51,12 @@ const EXPECTED: &[(&str, &str)] = &[
     ("kanban", "center"),
     ("notebook", "center"),
     ("page", "center"),
+    ("pivot", "center"),
+    ("graph", "center"),
+    ("calendar", "center"),
+    ("activity", "center"),
+    ("gantt", "center"),
+    ("root", "center"),
     // right_panel — chatter / activity
     ("chatter", "right_panel"),
     // bottom_bar — wizard dialog action bar
@@ -77,7 +83,10 @@ fn odoo_regions_conf_parses_through_the_ruff_region_directive() {
             "dock token {tok:?} must map exactly once (found {})",
             hits.len()
         );
-        assert_eq!(hits[0], region, "dock token {tok:?} maps to the wrong region");
+        assert_eq!(
+            hits[0], region,
+            "dock token {tok:?} maps to the wrong region"
+        );
     }
 
     // No extra rows leaked in (comments/blanks dropped, malformed rows dropped

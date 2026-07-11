@@ -16,9 +16,12 @@
 > §6 (the render side + render equation) and §8.1 (odoo portability row);
 > ruff `crates/ruff_spo_triplet/src/{exam_config,nav_digest}.rs` (the
 > `region=` directive + `[regions]` digest section).
-> **Status:** KNOWLEDGE-TRANSFER — the vocab exists on ruff main (proof
-> below); the Odoo harvester arm + odoo-rs digest section are the two
-> remaining *three-edit-recipe* edits (§4), scoped but not yet built.
+> **Status:** APPLIED — all three edits built. Edit 1 (vocab) on ruff main;
+> Edit 2 (`ruff_python_spo::extract_odoo_view_regions`) on ruff branch
+> `claude/odoo-region-grammar-arm`, proven on the real `account` views
+> (51 region facts); Edit 3 (the `[regions]` digest over the byte-frozen
+> corpus `data/nav/account_regions.spo.ndjson`) in
+> `crates/od-ontology/tests/region_digest.rs`. See §4 for the per-edit map.
 
 ______________________________________________________________________
 
@@ -141,20 +144,26 @@ Edits 2 and 3 remain:
   reuses them; **no predicate mint here** (mint gate untouched — region
   tokens are layout, not domain concepts, so they never earn a codebook
   classid; playbook §3 two-axis refusal).
-- **Edit 2 — the harvester arm `[H]`:** extend
-  `ruff_python_spo::odoo_views.rs` (or a sibling `odoo_regions.rs` arm) to
-  emit, per view record: `docked_at(control, arch_token)`,
-  `tab_order(control, dom_index)`, and `opens_popup(control, wizard|menu)` —
-  the same `Triple` shape + provenance (`Authoritative`, f/c = 0.95/0.90) as
-  the existing field-set arm. A neutral fixture (a synthetic `<form>` with a
-  `<header>`, a `<searchpanel>`, a `<notebook>`, and a `target="new"` button)
-  exercises all three. **This is ruff-side work** — filed as the odoo render
-  arm, mirror of #76's WinForms arm.
-- **Edit 3 — the digest section `[H]`:** wire odoo-rs's Klickweg digest to
-  read the new facts into a `[regions]` golden section (controls grouped by
-  `(screen, region)`, ordered by `tab_order`, `→popup` suffix) — the same
-  shape `nav_digest.rs` emits. Lands next to `klickweg_parity.rs` as a pinned
-  render-side test.
+- **Edit 2 — the harvester arm: BUILT** (`ruff_python_spo::odoo_regions`,
+  ruff branch `claude/odoo-region-grammar-arm`). `extract_odoo_view_regions`
+  walks each `ir.ui.view` arch with a full element stack; every leaf control
+  docks at its innermost `REGION_CONTAINERS` ancestor, emitting
+  `docked_at(screen::control, token)` + `tab_order(…, dom_index)` +
+  `opens_popup(…, action)` for `<button type="action">` — same `Triple`
+  shape + `Authoritative` (0.95/0.90) provenance as the field-set arm, mints
+  nothing. Full-text position-ordered (multi-line-tag safe); depth-0 rule
+  skips comodel fields; extension-view (`<xpath>`) controls dock at the
+  honest `root` fallback (region via `inherit_id` join = named follow-up).
+  6 neutral-fixture tests; proven on the real vendored `account` views
+  (51 facts). Mirror of #76's `WinForms` arm.
+- **Edit 3 — the digest section: BUILT** (`tests/region_digest.rs`). The real
+  harvest is byte-frozen as `data/nav/account_regions.spo.ndjson` (corpus
+  carriage, 103 triples) and folded through THIS doc's `region=` config using
+  ruff's OWN `build_nav_digest` — the consumer reuses the digest, never
+  reimplements it. The load-bearing pin: **every dock token the real arm
+  emitted is covered by the config** (no `unmapped:` leak) and resolves to a
+  canonical region. End-to-end proven, decoupled from the ruff merge (float
+  on main; the live harvest replaces the committed corpus once Edit 2 lands).
 
 ______________________________________________________________________
 
