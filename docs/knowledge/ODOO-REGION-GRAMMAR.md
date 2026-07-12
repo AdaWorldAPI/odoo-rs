@@ -16,12 +16,15 @@
 > §6 (the render side + render equation) and §8.1 (odoo portability row);
 > ruff `crates/ruff_spo_triplet/src/{exam_config,nav_digest}.rs` (the
 > `region=` directive + `[regions]` digest section).
-> **Status:** APPLIED — all three edits built. Edit 1 (vocab) on ruff main;
-> Edit 2 (`ruff_python_spo::extract_odoo_view_regions`) on ruff branch
-> `claude/odoo-region-grammar-arm`, proven on the real `account` views
-> (51 region facts); Edit 3 (the `[regions]` digest over the byte-frozen
-> corpus `data/nav/account_regions.spo.ndjson`) in
-> `crates/od-ontology/tests/region_digest.rs`. See §4 for the per-edit map.
+> **Status:** APPLIED + LIVE — all three edits merged. Edit 1 (vocab) on ruff
+> main; Edit 2 (`ruff_python_spo::extract_odoo_view_regions`) **merged to ruff
+> main via PR #79** (the merge promoted `RegionFact`/`region_triples` into the
+> shared `ruff_spo_triplet` crate — one type for Odoo/Rails/WinForms — and
+> canonicalized the subject to `{screen}.{control}` so it round-trips through
+> the one `build_nav_digest`); Edit 3 in
+> `crates/od-ontology/tests/region_digest.rs` now runs the arm LIVE over the
+> real `account` views and asserts it reproduces the frozen corpus
+> (`data/nav/account_regions.spo.ndjson`, 51 facts) byte-for-byte. See §4.
 
 ______________________________________________________________________
 

@@ -17,8 +17,15 @@
 //! when Edit 2 lands, the live harvest replaces the committed corpus).
 
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
+use ruff_python_spo::{extract_odoo_view_regions, region_triples};
 use ruff_spo_triplet::{build_nav_digest, from_ndjson, parse, to_ndjson};
+
+/// Repo `data/` root (mirror of `klickweg_parity.rs`).
+fn data_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data")
+}
 
 const REGIONS_NDJSON: &str = include_str!("../../../data/nav/account_regions.spo.ndjson");
 const REGIONS_CONF: &str = include_str!("../../../data/nav/odoo_regions.conf");
@@ -31,6 +38,21 @@ const CANONICAL_REGIONS: &[&str] = &[
     "bottom_bar",
     "popup",
 ];
+
+#[test]
+fn live_harvest_reproduces_the_frozen_corpus() {
+    // The loop, closed LIVE (ruff #79 on main): run the real arm over the
+    // vendored `account` views TODAY and assert it reproduces the committed
+    // corpus byte-for-byte. The frozen ndjson is no longer a hand-authored
+    // stand-in — it is exactly what `extract_odoo_view_regions` emits. If the
+    // arm intentionally changes, regenerate the corpus (this fails loudly).
+    let facts = extract_odoo_view_regions(&data_root().join("nav"));
+    let live = to_ndjson(&region_triples(&facts));
+    assert_eq!(
+        live, REGIONS_NDJSON,
+        "the live ruff arm output must equal data/nav/account_regions.spo.ndjson"
+    );
+}
 
 #[test]
 fn region_corpus_round_trips_byte_for_byte() {
