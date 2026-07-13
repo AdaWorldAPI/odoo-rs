@@ -4,8 +4,19 @@ version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/AdaWorldAPI/odoo-rs"
-description = "Thin HTTP host for the Odoo→OGAR transpiler frontend. Binds 0.0.0.0:$PORT (Railway PaaS pattern) and serves the `od-codegen` capability — classid resolution + action-row lowering — over HTTP by invoking the proven CLI. Deliberately decoupled from od-ontology's internal API: the CLI is the contract, so this host never drifts from what `od-codegen` actually emits."
+description = "Thin HTTP host for the Odoo→OGAR transpiler frontend. Binds 0.0.0.0:$PORT (Railway PaaS pattern). Serves two paths: the `od-codegen` CLI capability (classid / action rows over the corpus, via subprocess) AND the in-process `compile_source` path — Odoo `.py` source → `Vec<CompiledClass>` (the OGAR-V3 IR: Class + facet + ActionDef), landed as JSON over `/compile`. No SurrealQL: any AST lands OGAR-V3-shaped."
 
 [dependencies]
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# In-process OGAR-V3 landing: `compile_source(.py) -> Vec<CompiledClass>`.
+# od-ontology compiles OGAR (ogar-vocab + ogar-from-ruff + ruff_python_spo) in,
+# unconditionally (the former `ogar-emit` gate was retired 2026-07-06).
+od-ontology = { path = "../od-ontology" }
+
+[dev-dependencies]
+# Drive the axum Router in-process (oneshot) for the /compile integration test.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
