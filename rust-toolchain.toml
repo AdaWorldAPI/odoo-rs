@@ -1,16 +1,29 @@
 [toolchain]
-# AdaWorldAPI ecosystem-wide pin: rust 1.95 — matches lance-graph, OGAR,
-# ndarray, ruff, openproject-nexgen-rs, woa-rs, and MedCare-rs.
+channel = "1.97.1"
+# The pinned version is the `channel` line ABOVE — deliberately not restated in
+# this comment, so a bump cannot leave stale prose behind.
 #
-# odoo-rs's `ogar-emit` path depends on the AdaWorldAPI/OGAR fork
-# (ogar-vocab + ogar-adapter-surrealql), which requires rustc 1.95.
-# Without this pin the build falls back to the host default toolchain
-# (1.94.1), and the OGAR-dependent crates fail to compile — exactly the
-# gap the transcode-status audit hit. The default (serde-only) build
-# compiled fine on 1.94, so this pin is what unblocks the OGAR half.
+# Bump log (append one line per bump):
+#   → 1.95     Unblocked the `ogar-emit` path: the AdaWorldAPI/OGAR fork
+#              (ogar-vocab + ogar-adapter-surrealql) required rustc 1.95. Without
+#              the pin the build fell back to the host default (1.94.1) and the
+#              OGAR-dependent crates failed to compile — the gap the
+#              transcode-status audit hit. The default serde-only build compiled
+#              fine on 1.94; the pin is what unblocked the OGAR half.
+#   → 1.97.1   2026-08-10. Ecosystem realignment. The prior comment claimed this
+#              pin "matches lance-graph, OGAR, ndarray, ruff,
+#              openproject-nexgen-rs, woa-rs, and MedCare-rs" — that became FALSE
+#              when the lance-9 sweep (lance-graph b2b08b07) moved lance-graph,
+#              OGAR, woa-rs and MedCare-rs to 1.97.1. Corrected by moving, not by
+#              editing the claim. odoo-rs's only lance-family dependency is
+#              `lance-graph-contract` (git, branch=main, optional, feature
+#              `fieldmask`), so no dependency version moves with this.
 #
-# Don't add a patch number to the channel string (e.g. "1.95.1") —
-# rustup resolves the latest patch of the 1.95 line automatically.
-channel = "1.95"
+# On patch numbers: an explicit patch ("1.97.1") IS a valid toolchain identifier —
+# lance-graph, OGAR, woa-rs and MedCare-rs all pin this way. The trade is exact
+# reproducibility (explicit patch) vs auto-tracking the latest patch of a minor
+# line ("1.95"). The ecosystem chose explicit; this file follows it.
+#
+# Never auto-track `stable` — bump explicitly when a future version is reviewed.
 components = ["rustfmt", "clippy"]
 profile = "default"
