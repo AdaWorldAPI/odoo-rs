@@ -1,5 +1,5 @@
 [toolchain]
-# AdaWorldAPI ecosystem-wide pin: rust 1.95 — matches lance-graph, OGAR,
+# AdaWorldAPI ecosystem-wide pin: rust 1.98.1 — matches lance-graph, OGAR,
 # ndarray, ruff, openproject-nexgen-rs, woa-rs, and MedCare-rs.
 #
 # odoo-rs's `ogar-emit` path depends on the AdaWorldAPI/OGAR fork
@@ -9,8 +9,11 @@
 # gap the transcode-status audit hit. The default (serde-only) build
 # compiled fine on 1.94, so this pin is what unblocks the OGAR half.
 #
-# Don't add a patch number to the channel string (e.g. "1.95.1") —
-# rustup resolves the latest patch of the 1.95 line automatically.
-channel = "1.95"
+# 2026-09-25: bumped to 1.98.1 with the lance 12 / lancedb 0.39 sweep. The
+# channel is an EXACT patch pin, like the rest of the ecosystem: a full
+# `1.98.1` is a valid toolchain identifier (rustup, rust-analyzer and
+# `rustup show` all accept it), and an exact pin reproduces the CI
+# toolchain byte for byte, where a minor-only `1.98` floats.
+channel = "1.98.1"
 components = ["rustfmt", "clippy"]
 profile = "default"

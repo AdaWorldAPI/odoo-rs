@@ -9,7 +9,7 @@
 # Build args pinned to the repo's toolchain (rust-toolchain.toml → 1.95).
 # ---------------------------------------------------------------------------
 
-FROM rust:1.95-bookworm AS builder
+FROM rust:1.98-bookworm AS builder
 WORKDIR /build
 
 # Copy the whole workspace (Cargo.lock + all crates) so both binaries build
