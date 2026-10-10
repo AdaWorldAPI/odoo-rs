@@ -6,10 +6,10 @@
 # 0.0.0.0:$PORT and shells to `od-codegen` (the proven CLI) for classid
 # resolution + action-row lowering. Two binaries, one image.
 #
-# Build args pinned to the repo's toolchain (rust-toolchain.toml → 1.98.1).
+# Build args pinned to the repo's toolchain (rust-toolchain.toml → 1.99.0).
 # ---------------------------------------------------------------------------
 
-FROM rust:1.98-bookworm AS builder
+FROM rust:1.99.0-bookworm AS builder
 WORKDIR /build
 
 # Copy the whole workspace (Cargo.lock + all crates) so both binaries build
