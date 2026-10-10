@@ -14,6 +14,6 @@
 # `1.98.1` is a valid toolchain identifier (rustup, rust-analyzer and
 # `rustup show` all accept it), and an exact pin reproduces the CI
 # toolchain byte for byte, where a minor-only `1.98` floats.
-channel = "1.98.1"
+channel = "1.99.0"
 components = ["rustfmt", "clippy"]
 profile = "default"
