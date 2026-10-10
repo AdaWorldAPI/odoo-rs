@@ -79,10 +79,15 @@ fn klickweg_harvest_pins_and_corpus_carriage() {
 
     // ── Harvest pins (2026-07-09 fuses; re-pin deliberately on change) ──
     assert_eq!(report.py_files, 1, "the vendored real account_move.py");
-    assert_eq!(report.xml_files, 4, "form-view fixture + 3 vendored nav files");
     assert_eq!(
-        report.raw_act_window_refs, 9,
-        "act_window dicts in the .py + action records in the nav XMLs"
+        report.xml_files, 5,
+        "form-view fixture + 3 vendored account nav files + the analytic \
+         parent views (data/nav/analytic/, region join)"
+    );
+    assert_eq!(
+        report.raw_act_window_refs, 11,
+        "act_window dicts in the .py + action records in the nav XMLs \
+         (9 + the analytic file's 2)"
     );
     let flat: Vec<String> = edges
         .iter()
