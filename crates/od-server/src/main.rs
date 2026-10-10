@@ -5,15 +5,20 @@
 //! subprocess. The CLI is the contract: this host serves exactly what
 //! `od-codegen` emits — classid resolution (`--classids`, default) and the
 //! behavioural-arm action rows (`--actions`) — and cannot drift from it.
+//! One route, `/compile`, is in-process instead: it calls
+//! `od_ontology::compile_source` directly (see below).
 //!
-//! ## Why a subprocess, not a library link
+//! ## Why a subprocess, not a library link (corpus routes)
 //!
 //! `od-ontology`'s emit surfaces are in flux (SurrealQL emit was deprecated
 //! 2026-07-06; the transpiler's SDK emitters live in OGAR, not odoo-rs). Rather
 //! than couple this host to an internal API that is mid-migration, it shells to
 //! the shipped `od-codegen` binary — the one interface that is stable and
 //! tested. When odoo-rs grows an in-process `emit_*` / hydration API, swap the
-//! subprocess for a direct call behind the same routes.
+//! subprocess for a direct call behind the same routes. `/compile` is the
+//! first route that already made that swap: Odoo `.py` source goes through
+//! `od_ontology::compile_source` (`ruff_python_spo` parse →
+//! `compile_graph_python::<OdooPort>` lift + mint) with no subprocess.
 //!
 //! ## Routes
 //!
@@ -24,14 +29,24 @@
 //!   output (table → OGAR render classid map).
 //! - `POST /actions`  — body = SPO-triple ndjson; returns `od-codegen --actions`
 //!   output (the ActionDef lowering rows).
+//! - `POST /codegen/:mode` — the same subprocess call for any `od-codegen`
+//!   mode, so a new mode needs no new route.
+//! - `POST /compile`  — body = an Odoo model `.py` source; returns JSON with one
+//!   entry per compiled class: name, OGAR-V3 classid (`0x…`, canon-high), and
+//!   attribute / association / action counts. 422 when nothing compiles
+//!   (unparseable source or no model class), 400 when the body is not UTF-8.
 //!
 //! ## Storage contract (documented, not yet wired)
 //!
 //! `STORAGE_BACKEND` selects the intended sink for hydrated output —
 //! `lance-graph` (native V3, the canonical sink) or `postgres` (the 3×SPOG
-//! facet-table ORM shape). The actual hydration writer is a follow-up that
-//! belongs with odoo-rs's storage arc; this host surfaces the choice and its
-//! readiness so onboarding is honest about what is and isn't live.
+//! facet-table ORM shape). This host writes nothing: it surfaces the choice
+//! and its readiness so onboarding is honest about what is and isn't live.
+//! The row shape for the `lance-graph` sink exists upstream — OGAR
+//! `ogar_from_ruff::lance_sink::compiled_classes_to_noderows` keys each
+//! `CompiledClass` by its V3 facet and refuses duplicate keys (OGAR #331) —
+//! but the writer that persists those rows belongs with odoo-rs's storage
+//! arc and is not called from here.
 
 use std::process::Stdio;
 
