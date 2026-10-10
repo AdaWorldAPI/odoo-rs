@@ -246,7 +246,7 @@ mod tests {
             t("odoo:m", "has_function", "odoo:m.action_post"),
         ];
         // none raise, none are _compute_* → no behavioral arm
-        assert!(corpus_to_actions(&triples).is_empty());
+        assert_eq!(corpus_to_actions(&triples).len(), 0);
     }
 
     #[test]
