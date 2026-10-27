@@ -327,15 +327,43 @@ population) like every other law (§6):
   squash chain), never between sibling branches. Siblings have no order to
   supersede by.
 
-### What a probe would test (not built)
+### Probe and results (`tests/dt64_thought_git_branching.rs`)
 
-- Fork on the unknown guards of the cube (§10's 5 guard positions), run the
-  fold per branch, land through `next_version`; assert collapse when the
-  writes agree and a `Divergence` when they do not.
-- Assert coexisting writers stay in one branch (no divergence between
-  `_compute_currency_id` and `_onchange_invoice_vendor_bill`).
-- A truth-valued cell lands by revision; a Boolean cell with the same
-  disagreement stays a divergence.
+Each assignment of the unknown guards is one thought in a thought-git
+`SlotPool`, branched from main. Its writes are the dispatch result for one
+event as 64-bit DO block masks (thought-git's cell space is 12 rows × 4
+lanes, so one cell per DO position does not fit; disagreements inside a block
+are decoded by XOR). The thoughts land through `next_version`.
+
+| check | result on slice 1 |
+|---|---|
+| branches | 4 unknown guards (`always` is known) → 16 branches, no slot pressure |
+| divergences equal the DO positions the guards change (naive scan) | yes: `raise:ValidationError`, `raise:UserError`, `raise:RedirectWarning` |
+| event with declared triggers (`account_move.partner_id`) | all 16 branches agree; no divergence; stored masks equal the `always`-only dispatch |
+| landing order (reversed, rotated) | identical version |
+| coexisting writers of `currency_id` | set in every branch; never divergent |
+| parent → child override (synthetic v2 retracts the onchange) | as siblings they diverge; squashed child over parent, the child's writes land with no divergence |
+| truth cell vs Boolean twin | the truth cell lands by `NarsTruth::revision`; the Boolean twin stays a divergence |
+
+Revised truths (each branch states f = 1 or 0 at c = 0.5):
+
+| DO position | fires in | revised f | revised c |
+|---|---|---|---|
+| `raise:ValidationError` | 15 of 16 | 0.9375 | 0.9412 |
+| `raise:UserError` | 8 of 16 | 0.5000 | 0.9412 |
+| `raise:RedirectWarning` | 8 of 16 | 0.5000 | 0.9412 |
+
+With equal confidences, revision weights the branches equally, so the revised
+frequency is the share of branches in which the raise fires. The confidence
+is 16/17: each c = 0.5 contributes evidence weight 1, and revision adds
+weights. Folding the offers in reverse order gives the same truth within float
+error. Two limits follow from the same arithmetic. `NarsTruth::new` clamps
+confidence at 0.99, so the fold stops being order-independent once total
+weight passes 99. And the branch weights must reflect how likely each guard
+assignment is: equal weights assume every unknown guard is a coin flip.
+
+The revision landing rule is test-local (`land_with_revision`). thought-git
+itself still records a divergence for every disagreement.
 
 Status of the pieces: thought-git is a lab probe and its API a proposal
 (`.claude/plans/thought-git-api-v1.md`, admission is D-TGB-7). Nothing here is
