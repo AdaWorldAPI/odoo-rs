@@ -1,0 +1,404 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:adaworldapi:odoo-rs:codegraph-harvest:v1",
+  "title": "Odoo Codegraph and domain evidence export (proposal)",
+  "description": "Optional evidence-preserving graph view over existing Ruff SPO and OGAR V3; not a new predicate catalogue, native DT64 registry, or executable contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "metadata",
+    "nodes",
+    "edges"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "revision",
+        "extractor",
+        "snapshot_kind",
+        "coverage"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 7,
+          "description": "Pinned revision or immutable snapshot ID; never floating main in attested exports."
+        },
+        "extractor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "odoo_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot_kind": {
+          "enum": [
+            "source_harvest",
+            "effective_registry_observation"
+          ]
+        },
+        "registry_snapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "observation_id",
+            "addon_set_digest",
+            "registry_fingerprint"
+          ],
+          "properties": {
+            "observation_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "addon_set_digest": {
+              "type": "string",
+              "minLength": 1
+            },
+            "registry_fingerprint": {
+              "type": "string",
+              "minLength": 1
+            },
+            "context_scope": {
+              "type": "string"
+            },
+            "observer": {
+              "type": "string"
+            }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "completeness",
+            "missing_facts"
+          ],
+          "properties": {
+            "scope": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "completeness": {
+              "enum": [
+                "complete_for_scope",
+                "partial",
+                "unknown"
+              ]
+            },
+            "missing_facts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "snapshot_kind": {
+                "const": "effective_registry_observation"
+              }
+            },
+            "required": [
+              "snapshot_kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "registry_snapshot"
+            ]
+          }
+        }
+      ]
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    },
+    "dt64_candidates": {
+      "type": "array",
+      "description": "Non-executable mapping proposals only; does not create DT64 seats or grant algebra/DO authority.",
+      "items": {
+        "$ref": "#/$defs/dt64_candidate"
+      }
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basis",
+        "status",
+        "reference"
+      ],
+      "properties": {
+        "basis": {
+          "enum": [
+            "parsed_source",
+            "harvested_spo",
+            "static_inference",
+            "registry_observation",
+            "unresolved"
+          ]
+        },
+        "status": {
+          "enum": [
+            "observed",
+            "candidate",
+            "unknown",
+            "refused"
+          ]
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "knownness": {
+          "enum": [
+            "known_present",
+            "known_absent",
+            "unknown"
+          ]
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "start_line"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "start_column": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end_column": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blob_sha": {
+          "type": "string"
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "graph",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "file",
+            "module",
+            "class",
+            "function",
+            "method",
+            "import",
+            "model_declaration",
+            "field_declaration",
+            "method_declaration",
+            "effective_model",
+            "effective_field",
+            "constraint",
+            "view",
+            "selection_value",
+            "external_reference"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "qualified_name": {
+          "type": "string"
+        },
+        "graph": {
+          "enum": [
+            "structural",
+            "odoo-declared",
+            "odoo-effective",
+            "documentation"
+          ]
+        },
+        "legacy_iri": {
+          "type": "string",
+          "description": "Optional existing Ruff SPO symbol IRI; never mint a new predicate on export."
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "target",
+        "kind",
+        "graph",
+        "evidence"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "contains",
+            "imports",
+            "defines",
+            "calls",
+            "references",
+            "declares_model",
+            "has_field",
+            "has_method",
+            "extends_model",
+            "delegates_fields",
+            "overrides",
+            "effective_from",
+            "many2one",
+            "one2many",
+            "many2many",
+            "related",
+            "depends_on",
+            "emitted_by",
+            "reads_field",
+            "traverses_relation",
+            "has_constraint",
+            "defines_view"
+          ]
+        },
+        "graph": {
+          "enum": [
+            "structural",
+            "odoo-declared",
+            "odoo-effective",
+            "documentation"
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "dt64_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_node_ids",
+        "algebra_ref",
+        "status",
+        "evidence"
+      ],
+      "properties": {
+        "source_node_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "algebra_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "predicate_ref": {
+          "type": "string",
+          "description": "Existing typed predicate reference, if known; not a new slot allocation."
+        },
+        "status": {
+          "enum": [
+            "proposed",
+            "needs_attestation",
+            "refused"
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
