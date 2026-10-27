@@ -256,3 +256,87 @@ What each result means:
 - An OGIT verb → role-bit table does not exist.
 - Laws beyond Boolean associativity (inverse, symmetric, transitive) need
   instance evidence before admission.
+
+## 12. Counterfactual branches resolved by thought-git (proposal, 2026-10-27)
+
+Operator idea: run the DO work of many alternatives in parallel, one per
+thought slot ("main" plus 63 versions), and resolve them with thought-git by
+comparing the counterfactual results, applying either a supersession rule or
+synthesis inference.
+
+### Two different 64s
+
+- **DO axis width**: at most 64 capability kinds per frame. One dispatch
+  already evaluates all of them at once (the fold of §3 returns a DO mask).
+- **Thought slots**: thought-git's `SlotPool` (lance-graph
+  `crates/thought-git-probe`, lab only): slot 0 holds the givens (main),
+  slots 1..=63 hold live thoughts, each with a parent link and a
+  generation-checked handle.
+
+Branches are alternatives; the DO axis is not. Methods that **coexist** in
+one registry version (§5) must all fire inside the **same** branch. Splitting
+them into competing branches would turn coexistence back into replacement.
+
+### What branches are for
+
+1. **Unknown guards.** A WHEN guard that is unknown for the current state
+   (§4) forks into two thoughts, guard true and guard false. If both land
+   the same writes, the guard did not matter and the branches collapse; if
+   they differ, the difference is the guard's effect. k unknown guards give
+   2^k branches; k ≤ 5 fits in 63 slots.
+2. **Registry versions.** Dispatching the same event against two registry
+   versions (an override and the method it replaced) shows what the
+   override changes.
+3. **Hypotheses.** Any alternative input state.
+
+Branches are independent until they land, so they run in parallel. Landing is
+the serialization point: one data version per cycle. The landing order must
+come from thought ids, never from completion order.
+
+### What thought-git resolves today (read from `src/oracle.rs`, `src/slots.rs`)
+
+| case | current rule |
+|---|---|
+| a write equal to a given | agreement; not stored |
+| a write different from a given | refused; recorded as a `Contradiction` |
+| landing thoughts offer one value for a cell | stored |
+| landing thoughts offer different values | nothing stored; recorded as a `Divergence`; the cell keeps its previous value |
+| a stack squashed into one thought | union of writes, later over earlier (supersession) |
+| slot pressure | evict FIFO or least used; a candidate in a dependency chain is squashed instead of lost |
+| comparing results | receipts carry folds over reads and writes; replay recomputes both and refuses on any difference |
+
+So supersession exists: squash, younger over older. Comparison by folds
+exists: two branches with equal write folds agree, with no decoding.
+**Synthesis inference does not exist.** A divergence is recorded and left
+unresolved.
+
+### Where synthesis may and may not apply
+
+Synthesis is a new landing rule, so it must be admitted per (role,
+population) like every other law (§6):
+
+- **Boolean Distinct writes** (DO presence, a field value): synthesis has
+  nothing to combine. Two branches writing different currencies to
+  `currency_id` do not average. These divergences stay reported (§5
+  rule 4).
+- **Truth-valued writes** (`TruthU8` / NARS frequency and confidence): NARS
+  revision is a defined synthesis rule with its own algebra. A cell whose
+  slot carries a truth population could land the revised value instead of a
+  divergence.
+- **Supersession** applies only along a parent link (a declared override or a
+  squash chain), never between sibling branches. Siblings have no order to
+  supersede by.
+
+### What a probe would test (not built)
+
+- Fork on the unknown guards of the cube (§10's 5 guard positions), run the
+  fold per branch, land through `next_version`; assert collapse when the
+  writes agree and a `Divergence` when they do not.
+- Assert coexisting writers stay in one branch (no divergence between
+  `_compute_currency_id` and `_onchange_invoice_vendor_bill`).
+- A truth-valued cell lands by revision; a Boolean cell with the same
+  disagreement stays a divergence.
+
+Status of the pieces: thought-git is a lab probe and its API a proposal
+(`.claude/plans/thought-git-api-v1.md`, admission is D-TGB-7). Nothing here is
+admitted.
