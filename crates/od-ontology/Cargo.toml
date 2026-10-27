@@ -83,3 +83,8 @@ required-features = ["fieldmask"]
 [lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = "warn"
+
+[dev-dependencies]
+# DR64 relation composition (relcomp) for the method-ordering parity probe
+# `tests/dt64_relcomp_parity.rs`. Lab crate; test-only.
+dr-math-binding-probe = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
