@@ -88,3 +88,7 @@ pedantic = "warn"
 # DR64 relation composition (relcomp) for the method-ordering parity probe
 # `tests/dt64_relcomp_parity.rs`. Lab crate; test-only.
 dr-math-binding-probe = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
+# Thought-git slot pool and landing oracle, and the contract's NARS truth, for
+# the counterfactual branching probe `tests/dt64_thought_git_branching.rs`.
+thought-git-probe = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
+lance-graph-contract = { git = "https://github.com/AdaWorldAPI/lance-graph", branch = "main" }
