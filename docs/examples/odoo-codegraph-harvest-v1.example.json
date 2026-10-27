@@ -1,0 +1,119 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "repository": "AdaWorldAPI/odoo-rs",
+    "revision": "7737a129491a289efde339e3e719539ec662b9b0",
+    "extractor": "illustrative projection from existing SPO corpus; not a live exporter",
+    "odoo_version": null,
+    "snapshot_kind": "source_harvest",
+    "coverage": {
+      "scope": [
+        "account.move (slice 1)"
+      ],
+      "completeness": "partial",
+      "missing_facts": [
+        "effective registry and installed-addon ordering",
+        "onchange and constraint decorator trigger arguments",
+        "ACL and record-rule applicability",
+        "verified method calls and body writes"
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "model:account.move",
+      "kind": "model_declaration",
+      "name": "account.move",
+      "graph": "odoo-declared",
+      "legacy_iri": "odoo:account_move",
+      "evidence": {
+        "basis": "harvested_spo",
+        "status": "observed",
+        "reference": "data/account_move.spo.ndjson",
+        "knownness": "known_present"
+      },
+      "attributes": {}
+    },
+    {
+      "id": "field:account.move:currency_id",
+      "kind": "field_declaration",
+      "name": "currency_id",
+      "graph": "odoo-declared",
+      "legacy_iri": "odoo:account_move.currency_id",
+      "evidence": {
+        "basis": "harvested_spo",
+        "status": "observed",
+        "reference": "data/account_move.spo.ndjson",
+        "knownness": "known_present"
+      },
+      "attributes": {}
+    },
+    {
+      "id": "method:account.move:_compute_currency_id",
+      "kind": "method_declaration",
+      "name": "_compute_currency_id",
+      "graph": "odoo-declared",
+      "legacy_iri": "odoo:account_move._compute_currency_id",
+      "evidence": {
+        "basis": "harvested_spo",
+        "status": "observed",
+        "reference": "data/account_move.spo.ndjson",
+        "knownness": "known_present"
+      },
+      "attributes": {}
+    },
+    {
+      "id": "method:account.move:_onchange_invoice_vendor_bill",
+      "kind": "method_declaration",
+      "name": "_onchange_invoice_vendor_bill",
+      "graph": "odoo-declared",
+      "legacy_iri": "odoo:account_move._onchange_invoice_vendor_bill",
+      "evidence": {
+        "basis": "harvested_spo",
+        "status": "observed",
+        "reference": "data/account_move.spo.ndjson",
+        "knownness": "known_present"
+      },
+      "attributes": {}
+    }
+  ],
+  "edges": [
+    {
+      "source": "model:account.move",
+      "target": "field:account.move:currency_id",
+      "kind": "has_field",
+      "graph": "odoo-declared",
+      "evidence": {
+        "basis": "static_inference",
+        "status": "candidate",
+        "reference": "illustrative ownership projection; not a new Ruff triple",
+        "knownness": "unknown"
+      }
+    },
+    {
+      "source": "field:account.move:currency_id",
+      "target": "method:account.move:_compute_currency_id",
+      "kind": "emitted_by",
+      "graph": "odoo-declared",
+      "evidence": {
+        "basis": "harvested_spo",
+        "status": "observed",
+        "reference": "data/account_move.spo.ndjson",
+        "knownness": "known_present"
+      }
+    },
+    {
+      "source": "field:account.move:currency_id",
+      "target": "method:account.move:_onchange_invoice_vendor_bill",
+      "kind": "emitted_by",
+      "graph": "odoo-declared",
+      "evidence": {
+        "basis": "harvested_spo",
+        "status": "observed",
+        "reference": "data/account_move.spo.ndjson",
+        "knownness": "known_present"
+      }
+    }
+  ],
+  "dt64_candidates": []
+}
