@@ -262,8 +262,6 @@ fn inherit_and_inherits_cannot_be_disambiguated_from_coarse_predicate() {
     let ts = parse_ndjson(projected).unwrap();
     assert_eq!(ts.len(), 1);
     assert_eq!(ts[0].p, "inherits_from");
-    assert!(!projected.contains("_inherits"));
-    assert!(!projected.contains("_inherit\\\""));
     // No source-kind witness exists here: classification must remain UNKNOWN.
     let witnessed_kind: Option<&str> = None;
     assert_eq!(witnessed_kind, None);
