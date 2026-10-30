@@ -26,6 +26,19 @@ Independent reference: pair-by-pair enumeration of every `emitted_by` producer a
 
 **Expected historical acceptance:** slice 1 has 44 `RecomputeDag` edges plus 26 further distinct edges in the full composition; the executable test pins those counts and asks the independently enumerated pairs to match every DR bit. Do not substitute the old test's output for a new run.
 
+## Independent source-census verification (completed)
+
+The source blob was read anew through the GitHub connector and parsed as NDJSON in an independent JavaScript enumeration, without calling any Rust DR or RecomputeDag implementation. On the exact blob SHA above:
+
+- 1,825 source triples;
+- 34 fields both emitted and read;
+- 70 distinct non-reflexive producer → reader pairs by enumerating every emitter for each field;
+- 44 distinct pairs using the existing last-emitter-per-field rule;
+- **26 lost pairs** and zero last-emitter pairs absent from the complete set;
+- the two exact `currency_id` writers match the #46 illustrative export, in both identities and multiplicity.
+
+This validates the input/oracle reference and historical #44 counts independently; **it does not run or validate the newly written Rust DR test**, so its pass/fail status remains unverified until Cargo/CI runs.
+
 ## Behavioral information loss: at least two different kinds
 
 1. **Emitter multiplicity.** `account_move.currency_id` has two distinct source-declared methods, `_compute_currency_id` and `_onchange_invoice_vendor_bill`. Dropping either from the #46 source projection must be rejected. On this corpus, `RecomputeDag` keeps only the last emitter of a field and misses 26 ordering candidates in slice 1. A complete Boolean composition restores candidate dependencies, not method execution.
